@@ -1,0 +1,6 @@
+{
+  "identifier": "default",
+  "description": "Local app window events and drag-and-drop",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

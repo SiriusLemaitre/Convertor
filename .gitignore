@@ -1,0 +1,9 @@
+node_modules/
+dist/
+release/
+*.tsbuildinfo
+.tools/
+src-tauri/target/
+src-tauri/binaries/*
+!src-tauri/binaries/.gitkeep
+*.log

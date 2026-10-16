@@ -1,0 +1,27 @@
+Native engines bundled with Convertor
+====================================
+
+FFmpeg and FFprobe
+License: GNU GPL version 3 (see FFmpeg-GPL-3.0.txt).
+Project and source: https://ffmpeg.org/ and https://git.ffmpeg.org/ffmpeg.git
+Build distributor and recipes: https://github.com/BtbN/FFmpeg-Builds
+Exact FFmpeg revision and configuration: see ffmpeg-build-info.txt.
+This build includes third-party codecs and libraries; see its configuration
+and the distributor's build recipes for their corresponding source.
+
+qpdf 12.4.2
+License: Apache License 2.0 (see Apache-2.0.txt and qpdf-license.txt).
+Copyright: qpdf contributors.
+Project: https://qpdf.sourceforge.io/
+Source: https://github.com/qpdf/qpdf/tree/v12.4.2
+Source archive: https://github.com/qpdf/qpdf/releases/download/v12.4.2/qpdf-12.4.2.tar.gz
+Windows runtime DLLs distributed alongside qpdf are included as supplied
+by the official qpdf Windows binary distribution.
+
+Convertor application
+License: MIT; see the project's LICENSE file.
+Tauri: MIT or Apache-2.0. React: MIT. Lucide icons: ISC.
+The application invokes conversion engines as separate native processes.
+
+When redistributing GPL binaries, comply with their corresponding-source
+requirements; project links alone are not a replacement for those duties.

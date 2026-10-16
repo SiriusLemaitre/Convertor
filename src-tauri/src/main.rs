@@ -5,7 +5,7 @@ use serde::Serialize;
 use std::{fs, path::{Path, PathBuf}, sync::{Arc, Mutex}};
 use tauri::Manager;
 
-struct AppState { queue: Arc<Queue>, preview: Arc<PreviewManager>, settings: Mutex<Settings>, config: PathBuf, resources: PathBuf }
+struct AppState { queue: Arc<Queue>, preview: Arc<PreviewManager>, visual: Arc<PreviewManager>, settings: Mutex<Settings>, config: PathBuf, resources: PathBuf }
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct AppInfo { settings: Settings, engines: Vec<EngineInfo>, cpu_count: usize }
@@ -20,16 +20,22 @@ fn find_engine(name: &str, custom: &str, resources: &Path) -> Option<PathBuf> {
         return if path.is_absolute() && path.is_file() { Some(path) } else { None };
     }
     let executable = if cfg!(windows) { format!("{name}.exe") } else { name.into() };
-    let mut folders = vec![resources.join("binaries"), PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("binaries")];
+    let mut folders = vec![resources.join("binaries/poppler/Library/bin"), resources.join("binaries"), PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("binaries/poppler/Library/bin"), PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("binaries")];
     if let Ok(current) = std::env::current_exe() { if let Some(parent) = current.parent() { folders.push(parent.join("binaries")); folders.push(parent.to_path_buf()); } }
     if let Some(path) = std::env::var_os("PATH") { folders.extend(std::env::split_paths(&path)); }
     folders.into_iter().map(|folder| folder.join(&executable)).find(|path| path.is_file())
 }
 fn info(settings: Settings, resources: &Path) -> AppInfo {
-    let engines = [("FFmpeg", "ffmpeg", &settings.ffmpeg_path), ("qpdf", "qpdf", &settings.qpdf_path)].into_iter().map(|(display, name, custom)| {
+    let engines = [("FFmpeg", "ffmpeg", &settings.ffmpeg_path), ("qpdf", "qpdf", &settings.qpdf_path), ("PDF renderer", "pdftoppm", &settings.pdf_renderer_path)].into_iter().map(|(display, name, custom)| {
         let path = find_engine(name, custom, resources);
         let version = path.as_ref().and_then(|path| {
-            let mut cmd = engine::command(path); cmd.arg(if name == "ffmpeg" { "-version" } else { "--version" });
+            let mut cmd = engine::command(path);
+            if name == "pdftoppm" {
+                cmd.arg("-h");
+                // Poppler reports its version on stderr; -h exits successfully.
+                return engine::output_with_timeout(cmd, None).ok().map(|_| "Poppler PDF renderer".to_string());
+            }
+            cmd.arg(if name == "ffmpeg" { "-version" } else { "--version" });
             engine::output_with_timeout(cmd, None).ok().and_then(|text| text.lines().next().map(|s| s.chars().take(120).collect::<String>()))
         });
         EngineInfo { name: display.into(), path: if version.is_some() { path.map(|p| p.to_string_lossy().into()) } else { None }, version }
@@ -48,7 +54,7 @@ async fn app_info(state: tauri::State<'_, AppState>) -> Result<AppInfo, String> 
 async fn save_settings(settings: Settings, state: tauri::State<'_, AppState>) -> Result<AppInfo, String> {
     if !(1..=4).contains(&settings.concurrency) { return Err("Choose between one and four simultaneous jobs.".into()); }
     if !settings.output_dir.is_empty() && !Path::new(&settings.output_dir).is_dir() { return Err("The output folder does not exist.".into()); }
-    for custom in [&settings.ffmpeg_path, &settings.qpdf_path] {
+    for custom in [&settings.ffmpeg_path, &settings.qpdf_path, &settings.pdf_renderer_path] {
         if !custom.trim().is_empty() && (!Path::new(custom.trim()).is_absolute() || !Path::new(custom.trim()).is_file()) { return Err("Choose an existing executable using an absolute path.".into()); }
     }
     let data = serde_json::to_vec_pretty(&settings).map_err(|e| e.to_string())?;
@@ -93,21 +99,34 @@ fn enqueue(mut request: JobRequest, state: tauri::State<'_, AppState>) -> Result
     for input in &mut request.inputs { *input = dunce::canonicalize(&input).map_err(|e| format!("Cannot open {input}: {e}"))?.to_string_lossy().into(); }
     engine::validate(&request)?;
     let settings = state.settings.lock().unwrap().clone();
-    let name = if request.kind == "pdf" { "qpdf" } else { "ffmpeg" };
-    let engine = find_engine(name, if name == "qpdf" { &settings.qpdf_path } else { &settings.ffmpeg_path }, &state.resources).ok_or(format!("{name} is not available. Set its path in Settings."))?;
-    let groups: Vec<Vec<String>> = if request.kind == "pdf" { vec![request.inputs.clone()] } else { request.inputs.iter().map(|input| vec![input.clone()]).collect() };
+    let groups: Vec<Vec<String>> = if ["pdf", "images-pdf"].contains(&request.kind.as_str()) { vec![request.inputs.clone()] } else { request.inputs.iter().map(|input| vec![input.clone()]).collect() };
     let mut tasks = vec![];
     for inputs in groups {
         let source = Path::new(&inputs[0]);
+        let name = if request.kind == "pdf-images" { "pdftoppm" } else if ["pdf", "pdf-pages"].contains(&request.kind.as_str()) || request.kind == "metadata" && source.extension().is_some_and(|e| e.eq_ignore_ascii_case("pdf")) { "qpdf" } else { "ffmpeg" };
+        let custom = match name { "qpdf" => &settings.qpdf_path, "pdftoppm" => &settings.pdf_renderer_path, _ => &settings.ffmpeg_path };
+        let engine = find_engine(name, custom, &state.resources).ok_or(format!("{name} is not available. Set its path in Settings."))?;
         let folder = if request.output_dir.is_empty() { source.parent().unwrap().to_path_buf() } else { dunce::canonicalize(&request.output_dir).map_err(|e| format!("Output folder unavailable: {e}"))? };
         if !folder.is_dir() { return Err("The output path must be a folder.".into()); }
-        let stem = if request.kind == "pdf" { request.output_name.trim().trim_end_matches(".pdf").to_string() } else { source.file_stem().unwrap_or_default().to_string_lossy().into() };
+        let stem = if ["pdf", "images-pdf"].contains(&request.kind.as_str()) { request.output_name.trim().trim_end_matches(".pdf").to_string() } else { source.file_stem().unwrap_or_default().to_string_lossy().into() };
         engine::validate_name(&stem)?;
         let mut job_request = request.clone(); job_request.inputs = inputs;
         tasks.push(Task { request: job_request, engine: engine.clone(), folder, stem });
     }
     Ok(state.queue.submit(tasks))
 }
+#[tauri::command]
+async fn visual_preview(mut request: JobRequest, revision: u64, state: tauri::State<'_, AppState>) -> Result<engine::PreviewData, String> {
+    let guard = state.visual.begin(revision)?;
+    request.inputs.truncate(1);
+    for input in &mut request.inputs { *input = dunce::canonicalize(&input).map_err(|e| e.to_string())?.to_string_lossy().into(); }
+    let pdf = request.inputs.first().is_some_and(|p| Path::new(p).extension().is_some_and(|e| e.eq_ignore_ascii_case("pdf")));
+    let settings = state.settings.lock().unwrap().clone();
+    let engine = find_engine(if pdf { "pdftoppm" } else { "ffmpeg" }, if pdf { &settings.pdf_renderer_path } else { &settings.ffmpeg_path }, &state.resources).ok_or("Preview engine unavailable")?;
+    tauri::async_runtime::spawn_blocking(move || engine::visual_preview(&request, &engine, &guard.cancelled)).await.map_err(|e| e.to_string())?
+}
+#[tauri::command]
+fn cancel_visual_preview(revision: u64, state: tauri::State<'_, AppState>) { state.visual.cancel(revision); }
 #[tauri::command]
 async fn preview_images(mut request: JobRequest, revision: u64, state: tauri::State<'_, AppState>) -> Result<Vec<ImagePreview>, String> {
     let guard = state.preview.begin(revision)?;
@@ -148,9 +167,9 @@ fn main() {
         let config = app.path().app_config_dir()?.join("settings.json");
         let mut settings: Settings = fs::read(&config).ok().and_then(|data| serde_json::from_slice(&data).ok()).unwrap_or_default();
         settings.concurrency = settings.concurrency.clamp(1, 4);
-        app.manage(AppState { queue: Queue::new(settings.concurrency), preview: PreviewManager::new(), settings: Mutex::new(settings), config, resources: app.path().resource_dir()? });
+        app.manage(AppState { queue: Queue::new(settings.concurrency), preview: PreviewManager::new(), visual: PreviewManager::new(), settings: Mutex::new(settings), config, resources: app.path().resource_dir()? });
         Ok(())
-    }).invoke_handler(tauri::generate_handler![app_info, save_settings, pick_files, inspect_files, pick_folder, pick_executable, enqueue, list_jobs, cancel_job, clear_finished, reveal_file, preview_images, cancel_image_preview, estimate_videos])
+    }).invoke_handler(tauri::generate_handler![app_info, save_settings, pick_files, inspect_files, pick_folder, pick_executable, enqueue, list_jobs, cancel_job, clear_finished, reveal_file, preview_images, cancel_image_preview, estimate_videos, visual_preview, cancel_visual_preview])
         .build(tauri::generate_context!()).expect("Could not start Convertor");
-    app.run(|app, event| { if let tauri::RunEvent::Exit = event { let state = app.state::<AppState>(); state.preview.shutdown(); state.queue.shutdown(); } });
+    app.run(|app, event| { if let tauri::RunEvent::Exit = event { let state = app.state::<AppState>(); state.preview.shutdown(); state.visual.shutdown(); state.queue.shutdown(); } });
 }

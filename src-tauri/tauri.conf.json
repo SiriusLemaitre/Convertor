@@ -11,7 +11,7 @@
   },
   "app": {
     "windows": [{ "title": "Convertor", "width": 1240, "height": 850, "minWidth": 900, "minHeight": 640 }],
-    "security": { "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src ipc: http://ipc.localhost" }
+    "security": { "assetProtocol": { "enable": true, "scope": ["**"] }, "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: asset: http://asset.localhost; media-src 'self' blob: asset: http://asset.localhost; connect-src ipc: http://ipc.localhost" }
   },
   "bundle": {
     "active": true,

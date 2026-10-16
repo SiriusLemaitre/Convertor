@@ -5,9 +5,9 @@ export const desktop = isTauri();
 export type InputFile = { path: string; name: string; size: number };
 export type Job = {
   id: string; kind: ToolId; label: string; status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
-  progress: number; output: string | null; error: string | null; created: number;
+  progress: number; output: string | null; outputIsDirectory: boolean; error: string | null; created: number;
 };
-export type Settings = { outputDir: string; concurrency: number; ffmpegPath: string; qpdfPath: string };
+export type Settings = { outputDir: string; concurrency: number; ffmpegPath: string; qpdfPath: string; pdfRendererPath: string };
 export type EngineInfo = { name: string; path: string | null; version: string | null };
 export type AppInfo = { settings: Settings; engines: EngineInfo[]; cpuCount: number };
 export type JobRequest = {
@@ -15,6 +15,7 @@ export type JobRequest = {
   bitrate: number; width: number; fps: number; start: number; duration: number | null;
   format?: string; imageWidth?: number; imageHeight?: number; keepAspect?: boolean; imageQuality?: number; imageScalePercent?: number;
   videoQuality?: number; videoHeight?: number; videoFps?: number;
+  pages?: string; operation?: string; targetMb?: number; rotation?: number; cropRatio?: string; interval?: number; dpi?: number;
 };
 export type VideoEstimate = { path: string; size: number; width: number; height: number; fps: number; bitrate: number };
 export type ImagePreview = { path: string; size: number; width: number; height: number; sourceWidth: number; sourceHeight: number };
@@ -33,4 +34,6 @@ export const api = {
   previewImages: (request: JobRequest, revision: number) => invoke<ImagePreview[]>('preview_images', { request, revision }),
   cancelPreview: (revision: number) => invoke<void>('cancel_image_preview', { revision }),
   estimateVideos: (request: JobRequest) => invoke<VideoEstimate[]>('estimate_videos', { request }),
+  visualPreview: (request: JobRequest, revision: number) => invoke<{ bytes: number[]; mime: string }>('visual_preview', { request, revision }),
+  cancelVisualPreview: (revision: number) => invoke<void>('cancel_visual_preview', { revision }),
 };

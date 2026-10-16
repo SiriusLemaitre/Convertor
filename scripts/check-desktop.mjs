@@ -50,6 +50,9 @@ try {
   }
   assert.ok(page, 'Desktop window did not create a page');
   page.on('pageerror', e => errors.push(e.message));
+  // Reset only this script's isolated WebView profile for a repeatable run.
+  await page.evaluate(() => localStorage.clear());
+  await page.reload();
   await page.getByRole('heading', { name: 'Tools', exact: true }).waitFor();
   assert.equal(await page.locator('.preview-banner').count(), 0);
   const info = await page.evaluate(() => window.__TAURI_INTERNALS__.invoke('app_info'));
@@ -93,6 +96,8 @@ try {
   await size.waitFor();
   const lowQualityBytes = Number(await size.getAttribute('data-bytes'));
   await page.getByRole('slider', { name: /Quality/ }).press('End');
+  await page.getByRole('button', { name: 'Preview changes', exact: true }).click();
+  await page.getByRole('img', { name: 'Output preview', exact: true }).waitFor();
   await page.waitForFunction(previous => Number(document.querySelector('[data-testid="image-preview-size"]')?.getAttribute('data-bytes')) > previous, lowQualityBytes);
   const previewBytes = Number(await size.getAttribute('data-bytes'));
   assert.equal(await page.locator('.preview-row').getAttribute('data-width'), '80');
@@ -135,8 +140,89 @@ try {
   const merged = jobs.find(job => job.kind === 'pdf').output.replace(/^\\\\\?\\/, '');
   assert.equal(execFileSync(engine('qpdf'), ['--show-npages', merged], { windowsHide: true, encoding: 'utf8' }).trim(), '2');
   await page.screenshot({ path: '.tools/desktop-queue.png', fullPage: true });
+  // Exercise the new tools through the real UI and native job queue.
+  const navigate = async name => {
+    await page.locator('.sidebar').getByRole('button', { name, exact: true }).first().click();
+    await page.getByRole('heading', { name, exact: true, level: 1 }).waitFor();
+  };
+  const drop = async inputs => {
+    await page.evaluate(inputs => window.__TAURI_INTERNALS__.invoke('plugin:event|emit', { event: 'tauri://drag-drop', payload: { paths: inputs, position: { x: 400, y: 300 } } }), inputs);
+    await page.locator('.file-row').first().waitFor();
+  };
+  const exportJob = async () => {
+    await page.locator('.convert-button').click();
+    await page.getByRole('heading', { name: 'Job queue', exact: true }).waitFor();
+    await page.locator('.job-row').first().locator('.job-status.completed').waitFor({ timeout: 30000 });
+    return (await page.evaluate(() => window.__TAURI_INTERNALS__.invoke('list_jobs')))[0];
+  };
+  await navigate('Resize, crop & rotate'); await drop([image]);
+  await page.getByRole('spinbutton', { name: 'Width (px)' }).fill('80');
+  await page.getByRole('spinbutton', { name: 'Height (px)' }).fill('80');
+  await page.getByRole('combobox', { name: 'Center crop' }).selectOption('1:1');
+  await page.getByRole('combobox', { name: 'Rotate clockwise' }).selectOption('90');
+  await page.getByRole('button', { name: 'Preview changes', exact: true }).click();
+  await page.getByRole('img', { name: 'Output preview', exact: true }).waitFor();
+  await page.waitForFunction(() => [...document.querySelectorAll('.comparison img')].every(img => img.naturalWidth > 0));
+  await page.screenshot({ path: '.tools/desktop-image-edit.png', fullPage: true });
+  await navigate('Job queue');
+  // Mouse side buttons restore the tool and its sources/options.
+  await page.evaluate(() => window.dispatchEvent(new MouseEvent('mouseup', { button: 3, cancelable: true })));
+  await page.getByRole('heading', { name: 'Resize, crop & rotate', exact: true }).waitFor();
+  assert.equal(await page.locator('.file-row').count(),1);
+  assert.equal(await page.getByRole('spinbutton', { name: 'Width (px)' }).inputValue(),'80');
+  await exportJob();
+  await navigate('Images to PDF'); await drop([image]);
+  await page.getByRole('textbox', { name: 'Document name' }).fill('desktop photos');
+  await exportJob();
+  for (const operation of ['extract','remove','split']) {
+    await navigate('Split & extract PDFs');
+    if (!await page.locator('.file-row').count()) await drop([merged]);
+    await page.getByRole('button', { name: operation[0].toUpperCase()+operation.slice(1), exact: true }).click();
+    await page.getByRole('textbox', { name: operation === 'remove' ? 'Pages to remove' : 'Pages', exact: true }).fill(operation === 'split' ? '' : '1');
+    const result = await exportJob();
+    assert.equal(result.outputIsDirectory,operation === 'split');
+  }
+  await navigate('PDF to images'); await drop([merged]);
+  await page.getByRole('button', { name: 'Preview selected page', exact: true }).click();
+  await page.getByRole('img', { name: 'PDF page preview', exact: true }).waitFor();
+  await page.getByRole('combobox', { name: 'Format', exact: true }).selectOption('jpg');
+  const rendered = await exportJob(); assert.equal(rendered.outputIsDirectory,true);
+  for (const source of [video,audio]) {
+    await navigate('Trim audio & video');
+    if (await page.getByRole('button', { name: 'Clear list', exact: true }).count()) await page.getByRole('button', { name: 'Clear list', exact: true }).click();
+    await drop([source]);
+    await page.getByRole('spinbutton', { name: 'Start (seconds)' }).fill('0.2');
+    await page.getByRole('spinbutton', { name: 'End (seconds)' }).fill('0.7');
+    const result = await exportJob(); assert.match(result.output,source === video ? /\.mp4$/ : /\.m4a$/);
+  }
+  await navigate('Extract video frames'); await drop([video]);
+  await page.getByRole('spinbutton', { name: 'Start / timestamp (seconds)' }).fill('0.5');
+  await page.getByRole('button', { name: 'Preview frame', exact: true }).click();
+  await page.getByRole('img', { name: 'Video frame preview', exact: true }).waitFor();
+  await exportJob();
+  await navigate('Extract video frames');
+  await page.getByRole('button', { name: 'At intervals', exact: true }).click();
+  await page.getByRole('spinbutton', { name: 'Every (seconds)' }).fill('0.5');
+  assert.equal((await exportJob()).outputIsDirectory,true);
+  await navigate('Compress to size'); await drop([video,audio,image]);
+  await page.getByRole('spinbutton', { name: 'Maximum size per file (MB)' }).fill('0.05');
+  await exportJob();
+  await page.waitForFunction(async () => (await window.__TAURI_INTERNALS__.invoke('list_jobs')).filter(j => j.kind === 'compress').every(j => j.status === 'completed'), null, { timeout: 30000 });
+  const compressed = (await page.evaluate(() => window.__TAURI_INTERNALS__.invoke('list_jobs'))).filter(j => j.kind === 'compress');
+  assert.equal(compressed.length,3);
+  for (const job of compressed) assert.ok(statSync(job.output).size <= 50000);
+  await navigate('Remove metadata'); await drop([video,audio,image,merged]);
+  await exportJob();
+  await page.waitForFunction(async () => (await window.__TAURI_INTERNALS__.invoke('list_jobs')).filter(j => j.kind === 'metadata').every(j => j.status === 'completed'), null, { timeout: 30000 });
+  const completed = await page.evaluate(() => window.__TAURI_INTERNALS__.invoke('list_jobs'));
+  assert.equal(completed.length,30);
+  assert.ok(completed.every(j => j.status === 'completed'),JSON.stringify(completed.filter(j => j.status !== 'completed')));
+  await page.locator('.job-row').filter({ hasText: 'Resize, crop & rotate' }).getByRole('button', { name: /^Preview/ }).click();
+  await page.getByRole('dialog', { name: 'Output preview' }).waitFor();
+  await page.getByRole('button', { name: 'Close preview', exact: true }).click();
+  await page.screenshot({ path: '.tools/desktop-toolbox-queue.png', fullPage: true });
   assert.deepEqual(errors, []);
-  console.log('Desktop checks passed: original tools, image size previews, five audio formats, and four video formats with live size estimates.');
+  console.log('Desktop checks passed: all 14 tools, previews, source retention, mouse navigation, all audio/video formats, and verified size limits.');
 } finally {
   if (browser) await browser.close();
   app.kill();

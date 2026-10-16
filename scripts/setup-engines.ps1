@@ -42,8 +42,22 @@ Expand-Archive -LiteralPath $qpdfZip -DestinationPath (Join-Path $downloadFolder
 $qpdfExe = Get-ChildItem (Join-Path $downloadFolder 'qpdf') -Filter qpdf.exe -Recurse | Select-Object -First 1
 Copy-Item -Path (Join-Path $qpdfExe.DirectoryName '*') -Destination $binaryFolder -Recurse -Force
 Copy-Item -LiteralPath (Join-Path $qpdfExe.Directory.Parent.FullName 'share/doc/qpdf/manual-html/_sources/license.rst.txt') -Destination (Join-Path $licenseFolder 'qpdf-license.txt')
+
+# Keep Poppler in its own folder so its runtime DLLs cannot replace qpdf's DLLs.
+$popplerVersion = '26.09.0-0'
+$popplerZip = Join-Path $downloadFolder 'poppler.zip'
+Download-File "https://github.com/oschwartz10612/poppler-windows/releases/download/v$popplerVersion/Release-$popplerVersion.zip" $popplerZip
+$popplerHash = (Get-FileHash -LiteralPath $popplerZip -Algorithm SHA256).Hash
+if ($popplerHash -ne '7A6F256A0DDF7536182246A5733331BF4677CBCC34F4663774947AD34556C8D0') { throw 'Poppler checksum mismatch' }
+$popplerExtract = Join-Path $downloadFolder 'poppler'
+Expand-Archive -LiteralPath $popplerZip -DestinationPath $popplerExtract -Force
+$popplerExe = Get-ChildItem -LiteralPath $popplerExtract -Filter pdftoppm.exe -Recurse | Select-Object -First 1
+$popplerDestination = Join-Path $binaryFolder 'poppler'
+New-Item -ItemType Directory -Force -Path $popplerDestination | Out-Null
+Get-ChildItem -LiteralPath $popplerExe.Directory.Parent.Parent.FullName | ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination $popplerDestination -Recurse -Force }
+Copy-Item -LiteralPath (Join-Path $binaryFolder 'poppler/share/poppler/COPYING.gpl2') -Destination (Join-Path $licenseFolder 'Poppler-GPL-2.0.txt')
 Download-File 'https://www.apache.org/licenses/LICENSE-2.0.txt' (Join-Path $licenseFolder 'Apache-2.0.txt')
 Copy-Item (Join-Path $PSScriptRoot 'THIRD-PARTY.txt') (Join-Path $licenseFolder 'THIRD-PARTY.txt')
 & (Join-Path $binaryFolder 'ffmpeg.exe') -version | Out-File (Join-Path $licenseFolder 'ffmpeg-build-info.txt') -Encoding utf8
 & (Join-Path $binaryFolder 'qpdf.exe') --version
-Write-Output 'FFmpeg, FFprobe, qpdf, and license notices are ready.'
+Write-Output 'FFmpeg, FFprobe, qpdf, Poppler, and license notices are ready.'

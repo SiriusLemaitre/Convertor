@@ -1,4 +1,7 @@
 use serde::{Deserialize, Serialize};
+#[path = "toolbox.rs"]
+mod toolbox;
+pub use toolbox::{visual_preview, PreviewData};
 use std::{
     collections::VecDeque,
     fs,
@@ -17,10 +20,12 @@ pub struct Settings {
     pub concurrency: usize,
     pub ffmpeg_path: String,
     pub qpdf_path: String,
+    #[serde(default)]
+    pub pdf_renderer_path: String,
 }
 impl Default for Settings {
     fn default() -> Self {
-        Self { output_dir: String::new(), concurrency: 1, ffmpeg_path: String::new(), qpdf_path: String::new() }
+        Self { output_dir: String::new(), concurrency: 1, ffmpeg_path: String::new(), qpdf_path: String::new(), pdf_renderer_path: String::new() }
     }
 }
 
@@ -54,6 +59,20 @@ pub struct JobRequest {
     pub video_height: u32,
     #[serde(default)]
     pub video_fps: u32,
+    #[serde(default)]
+    pub pages: String,
+    #[serde(default)]
+    pub operation: String,
+    #[serde(default)]
+    pub target_mb: f64,
+    #[serde(default)]
+    pub rotation: u32,
+    #[serde(default)]
+    pub crop_ratio: String,
+    #[serde(default)]
+    pub interval: f64,
+    #[serde(default)]
+    pub dpi: u32,
 }
 fn default_true() -> bool { true }
 fn default_quality() -> u32 { 80 }
@@ -64,6 +83,7 @@ pub const AUDIO_FORMATS: &[&str] = &["mp3", "ogg", "wav", "flac", "m4a"];
 pub const AUDIO_INPUTS: &[&str] = &["mp3", "ogg", "wav", "flac", "m4a", "aac", "opus", "aiff", "aif", "wma"];
 
 pub fn output_extension(request: &JobRequest) -> &str {
+    if toolbox::is_tool(request) { return toolbox::extension(request); }
     if ["image", "audio", "video"].contains(&request.kind.as_str()) { &request.format } else { &request.kind }
 }
 
@@ -110,6 +130,8 @@ pub struct Job {
     pub status: String,
     pub progress: f64,
     pub output: Option<String>,
+    #[serde(rename = "outputIsDirectory")]
+    pub output_is_directory: bool,
     pub error: Option<String>,
     pub created: u64,
 }
@@ -169,7 +191,7 @@ impl Queue {
             if let Some(entry) = inner.entries.iter_mut().find(|e| e.job.id == id) {
                 // Once an output is committed it is complete, even if cancellation arrived in that instant.
                 match result {
-                    Ok(path) => { entry.job.status = "completed".into(); entry.job.progress = 100.0; entry.job.output = Some(path.to_string_lossy().into()); }
+                    Ok(path) => { entry.job.status = "completed".into(); entry.job.progress = 100.0; entry.job.output_is_directory = path.is_dir(); entry.job.output = Some(path.to_string_lossy().into()); }
                     Err(_) if cancelled.load(Ordering::Relaxed) => { entry.job.status = "cancelled".into(); }
                     Err(error) => { entry.job.status = "failed".into(); entry.job.error = Some(error); }
                 }
@@ -187,7 +209,7 @@ impl Queue {
             let id = format!("{created}-{}", SEQUENCE.fetch_add(1, Ordering::Relaxed));
             let label = if task.request.kind == "pdf" { format!("{} documents → {}.pdf", task.request.inputs.len(), task.stem) }
                 else { Path::new(&task.request.inputs[0]).file_name().unwrap_or_default().to_string_lossy().into() };
-            let job = Job { id: id.clone(), kind: task.request.kind.clone(), label, status: "queued".into(), progress: 0.0, output: None, error: None, created };
+            let job = Job { id: id.clone(), kind: task.request.kind.clone(), label, status: "queued".into(), progress: 0.0, output: None, output_is_directory: false, error: None, created };
             added.push(job.clone());
             inner.entries.push(Entry { job, task, cancelled: Arc::new(AtomicBool::new(false)) });
             inner.pending.push_back(id);
@@ -257,6 +279,7 @@ pub fn output_with_timeout(mut cmd: Command, cancelled: Option<&AtomicBool>) -> 
 }
 
 pub fn validate(request: &JobRequest) -> Result<(), String> {
+    if toolbox::is_tool(request) { return toolbox::validate_tool(request); }
     if !["mp3", "gif", "pdf", "image", "audio", "video"].contains(&request.kind.as_str()) { return Err("Unknown tool".into()); }
     if request.kind == "video" && (!["mp4", "mkv", "webm", "mov"].contains(&request.format.as_str()) || !(1..=100).contains(&request.video_quality) || ![0, 360, 480, 720, 1080, 1440, 2160].contains(&request.video_height) || ![0, 15, 24, 25, 30, 50, 60].contains(&request.video_fps)) { return Err("Invalid video settings.".into()); }
     if request.inputs.is_empty() || (request.kind == "pdf" && request.inputs.len() < 2) { return Err("Select source files first (at least two for PDF merging).".into()); }
@@ -457,6 +480,7 @@ fn video_args(request: &JobRequest, plan: &VideoEstimate, output: &Path) -> Vec<
 }
 
 pub fn run_task(task: &Task, cancelled: &AtomicBool, mut progress: impl FnMut(f64)) -> Result<PathBuf, String> {
+    if toolbox::is_tool(&task.request) { return toolbox::run(task, cancelled, progress); }
     if cancelled.load(Ordering::Relaxed) { return Err("Cancelled".into()); }
     let temporary = tempfile::Builder::new().prefix(".convertor-").suffix(".partial").tempfile_in(&task.folder).map_err(|e| format!("Cannot write to the output folder: {e}"))?.into_temp_path();
     let request = &task.request;
@@ -577,7 +601,7 @@ fn commit_output(mut temporary: tempfile::TempPath, folder: &Path, stem: &str, e
 #[cfg(test)]
 mod tests {
     use super::*;
-    fn request(kind: &str) -> JobRequest { JobRequest { kind: kind.into(), inputs: vec!["C:\\Videos\\clip with spaces.mp4".into()], output_dir: String::new(), output_name: "Merged document".into(), bitrate: 192, width: 640, fps: 15, start: 2.0, duration: Some(5.0), format: String::new(), image_width: 0, image_height: 0, keep_aspect: true, image_quality: 80, image_scale_percent: None, video_quality: 65, video_height: 0, video_fps: 0 } }
+    fn request(kind: &str) -> JobRequest { JobRequest { kind: kind.into(), inputs: vec!["C:\\Videos\\clip with spaces.mp4".into()], output_dir: String::new(), output_name: "Merged document".into(), bitrate: 192, width: 640, fps: 15, start: 2.0, duration: Some(5.0), format: String::new(), image_width: 0, image_height: 0, keep_aspect: true, image_quality: 80, image_scale_percent: None, video_quality: 65, video_height: 0, video_fps: 0, pages: String::new(), operation: String::new(), target_mb: 10.0, rotation: 0, crop_ratio: String::new(), interval: 5.0, dpi: 150 } }
     #[test]
     fn output_never_overwrites_existing_files() {
         let folder = tempfile::tempdir().unwrap();

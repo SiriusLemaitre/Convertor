@@ -290,11 +290,17 @@ fn compress(task: &Task, output: &Path, stage: &Path, cancelled: &AtomicBool, mu
                 let log = stage.join(format!("pass-{attempt}"));
                 for pass in 1..=2 {
                     let mut args = base(input);
-                    args.extend(strings(&["-map", "0:V:0", "-map", "0:a:0?", "-c:v", "libx264", "-preset", "medium", "-pix_fmt", "yuv420p", "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2", "-b:v"]));
+                    // Bound encoder memory on large recordings, including concurrent jobs.
+                    // The second pass otherwise uses x264's slower, full analysis settings.
+                    args.extend(strings(&["-map", "0:V:0", "-map", "0:a:0?", "-c:v", "libx264", "-preset", "fast", "-threads:v", "4", "-pix_fmt", "yuv420p", "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2", "-b:v"]));
                     args.extend([format!("{}", video as u64), "-pass".into(), pass.to_string(), "-passlogfile".into(), log.to_string_lossy().into()]);
                     if pass == 1 { args.extend(strings(&["-an", "-f", "null", if cfg!(windows) { "NUL" } else { "/dev/null" }])); }
                     else { args.extend(["-c:a".into(), "aac".into(), "-b:a".into(), (audio as u64).to_string(), "-movflags".into(), "+faststart".into(), "-f".into(), "mp4".into(), output.to_string_lossy().into()]); }
-                    execute(&task.engine, &args, cancelled, duration, |v| progress((pass-1) as f64 * 49.0 + v*0.49), false)?;
+                    let start = (pass-1) as f64 * 49.0;
+                    progress(start);
+                    let mut cmd = command(&task.engine); cmd.args(&args);
+                    run_process_guarded(cmd, cancelled, duration, |v| progress(start + v.clamp(0.0, 100.0)*0.49), false, Some(Duration::from_secs(300)))?;
+                    progress(start + 49.0);
                 }
                 let size = fs::metadata(output).map_err(|e| e.to_string())?.len();
                 if size <= target { return Ok(()); }
@@ -410,6 +416,29 @@ mod tests {
         let clean = run_request(request("metadata",&pdf), folder.path(), "clean"); assert_eq!(page_count(&engine("qpdf"),&clean.to_string_lossy(),&AtomicBool::new(false),false).unwrap(),2);
         assert_eq!(fs::read(source).unwrap(),original);
         assert!(!fs::read_dir(folder.path()).unwrap().any(|p|p.unwrap().file_name().to_string_lossy().starts_with(".convertor-")));
+    }
+    #[test]
+    #[ignore = "Requires bundled engines"]
+    fn native_large_recording_compression_and_second_pass_cancellation() {
+        let folder = tempfile::tempdir().unwrap();
+        let source = folder.path().join("large recording.mp4");
+        let result = command(&engine("ffmpeg")).args(["-hide_banner", "-nostdin", "-y", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc2=size=1920x1080:rate=30", "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000", "-t", "30", "-c:v", "libx264", "-preset", "ultrafast", "-qp", "0", "-c:a", "aac"]).arg(&source).output().unwrap();
+        assert!(result.status.success(), "{}", String::from_utf8_lossy(&result.stderr));
+        let original_size = fs::metadata(&source).unwrap().len();
+        assert!(original_size > 100_000_000, "Fixture must exceed 100 MB: {original_size}");
+        let mut r = request("compress", &source); r.target_mb = 5.0;
+        let task = Task { request: r, engine: engine("ffmpeg"), folder: folder.path().into(), stem: "large".into() };
+        let mut values = vec![];
+        let output = run(&task, &AtomicBool::new(false), |value| values.push(value)).unwrap();
+        assert!(values.iter().any(|v| *v > 50.0 && *v < 98.0), "Second pass must report progress");
+        assert!(fs::metadata(&output).unwrap().len() <= 5_000_000);
+        assert!((seconds(&task.engine, &output.to_string_lossy(), &AtomicBool::new(false)).unwrap() - 30.0).abs() < 0.2);
+        let decoded = command(&task.engine).args(["-v", "error", "-i"]).arg(&output).args(["-f", "null", "-"]).output().unwrap();
+        assert!(decoded.status.success(), "{}", String::from_utf8_lossy(&decoded.stderr));
+        let flag = AtomicBool::new(false);
+        assert!(run(&task, &flag, |value| { if value > 49.0 { flag.store(true, Ordering::Relaxed); } }).is_err());
+        assert_eq!(fs::metadata(&source).unwrap().len(), original_size);
+        assert_eq!(fs::read_dir(folder.path()).unwrap().count(), 2, "Cancellation must clean temporary files");
     }
     #[test]
     #[ignore = "Requires bundled engines"]

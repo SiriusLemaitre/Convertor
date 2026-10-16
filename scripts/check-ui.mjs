@@ -10,6 +10,14 @@ try {
   await heading('Tools');
   assert.equal(await page.locator('.tool-card').count(),14);
   assert.equal(await page.locator('.tool-category').count(),5);
+  for (const [category, converter] of [['Images', 'Image Converter'], ['Audio', 'Audio Converter'], ['Video', 'Video Converter']]) {
+    const group = page.locator('.tool-category').filter({ has: page.getByRole('heading', { name: category, exact: true }) });
+    assert.equal(await group.locator('.tool-card h3').first().textContent(), converter);
+    const navigation = page.locator('.nav-category').filter({ has: page.getByRole('button', { name: `Browse ${category} tools`, exact: true }) });
+    assert.equal(await navigation.locator('.nav-item span').first().textContent(), converter);
+  }
+  assert.equal(await page.getByText('Offline & private', { exact: true }).count(), 0);
+  assert.equal(await page.getByText('Local processing · Your files stay here', { exact: true }).count(), 0);
   await page.screenshot({path:'.tools/home-preview.png',fullPage:true});
   await page.getByRole('group',{name:'Filter by category'}).getByRole('button',{name:'Documents',exact:true}).click();
   assert.equal(await page.locator('.tool-card').count(),4);
@@ -21,7 +29,7 @@ try {
   await page.locator('.tool-card').click(); await heading('Video to GIF');
   await page.getByRole('button',{name:'Trim',exact:true}).click();
   await page.getByRole('spinbutton',{name:'End (seconds)'}).fill('10');
-  await nav('Images'); await heading('Images');
+  await nav('Image Converter'); await heading('Image Converter');
   await page.getByRole('slider',{name:'Resolution',exact:true}).fill('50');
   await page.getByRole('combobox',{name:'Format',exact:true}).selectOption('jpg');
   await page.locator('.preset-details summary').click();
@@ -35,10 +43,10 @@ try {
   await heading('Video to GIF');
   assert.equal(await page.getByRole('spinbutton',{name:'End (seconds)'}).inputValue(),'10');
   await page.evaluate(() => { window.dispatchEvent(new MouseEvent('mousedown',{button:4,cancelable:true})); window.dispatchEvent(new MouseEvent('mouseup',{button:4,cancelable:true})); });
-  await heading('Images');
+  await heading('Image Converter');
   assert.equal(await page.getByRole('slider',{name:'Resolution',exact:true}).inputValue(),'50');
   await page.keyboard.press('Alt+ArrowLeft'); await heading('Video to GIF');
-  await page.keyboard.press('Alt+ArrowRight'); await heading('Images');
+  await page.keyboard.press('Alt+ArrowRight'); await heading('Image Converter');
   await nav('Compress to size'); await heading('Compress to size');
   assert.equal(await page.getByRole('button',{name:'Go forward'}).isDisabled(),true);
   await page.getByRole('spinbutton',{name:'Maximum size per file (MB)'}).fill('5');
@@ -48,10 +56,10 @@ try {
   await page.getByRole('combobox',{name:'Center crop'}).selectOption('4:3');
   await page.getByRole('combobox',{name:'Rotate clockwise'}).selectOption('90');
   await page.screenshot({path:'.tools/image-edit-preview.png',fullPage:true});
-  for (const name of ['Split & extract PDFs','Images to PDF','PDF to images','Trim audio & video','Extract video frames','Remove metadata','Video','Audio']) { await nav(name); await heading(name); assert.equal(await page.locator('.convert-button').isDisabled(),true); }
+  for (const name of ['Split & extract PDFs','Images to PDF','PDF to images','Trim audio & video','Extract video frames','Remove metadata','Video Converter','Audio Converter']) { await nav(name); await heading(name); assert.equal(await page.locator('.convert-button').isDisabled(),true); }
   await page.reload(); await heading('Tools'); await nav('Compress to size');
   assert.equal(await page.getByRole('spinbutton',{name:'Maximum size per file (MB)'}).inputValue(),'5');
-  await nav('Images');
+  await nav('Image Converter');
   assert.equal(await page.getByRole('slider',{name:'Resolution',exact:true}).inputValue(),'50');
   await page.locator('.preset-details summary').click();
   await page.getByRole('combobox',{name:'Saved preset'}).selectOption('Small JPEG');
@@ -59,6 +67,13 @@ try {
   assert.equal(await page.getByRole('combobox',{name:'Saved preset'}).count(),0);
   await nav('Job queue'); await page.getByText('No jobs.',{exact:true}).waitFor();
   await nav('Settings'); await heading('Settings');
+  await page.getByRole('combobox', { name: 'Appearance', exact: true }).selectOption('dark');
+  await page.getByRole('checkbox', { name: 'Automatically preview image changes' }).uncheck();
+  await page.reload(); await nav('Settings');
+  assert.equal(await page.locator('html').getAttribute('data-theme'), 'dark');
+  assert.equal(await page.getByRole('checkbox', { name: 'Automatically preview image changes' }).isChecked(), false);
+  await page.screenshot({ path: '.tools/dark-settings.png', fullPage: true });
+  await page.getByRole('checkbox', { name: 'Automatically preview image changes' }).check();
   assert.equal(await page.getByRole('button',{name:'Save settings'}).isDisabled(),true);
   await page.setViewportSize({width:900,height:640});
   await nav('Resize, crop & rotate');

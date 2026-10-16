@@ -1,11 +1,12 @@
 import { chromium } from '@playwright/test';
 import { spawn, execFileSync } from 'node:child_process';
-import { mkdirSync, writeFileSync, statSync } from 'node:fs';
+import { mkdirSync, writeFileSync, statSync, copyFileSync, unlinkSync } from 'node:fs';
 import path from 'node:path';
 import assert from 'node:assert/strict';
 
 const root = process.cwd();
-const binary = path.resolve(process.env.CONVERTOR_APP || 'release/Convertor.exe');
+const debugPort = 10000 + process.pid % 40000;
+const binary = path.resolve(process.argv[2] || process.env.CONVERTOR_APP || 'release/Convertor.exe');
 const folder = path.join(root, '.tools', 'desktop-smoke');
 mkdirSync(folder, { recursive: true });
 const engine = name => path.join(root, 'src-tauri', 'binaries', `${name}.exe`);
@@ -31,14 +32,14 @@ const secondPdf = path.join(folder, 'second.pdf');
 pdf(firstPdf, 200); pdf(secondPdf, 300);
 const app = spawn(binary, [], {
   windowsHide: true,
-  env: { ...process.env, PATH: `${process.env.SystemRoot}\\System32;${process.env.SystemRoot}`, WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: '--remote-debugging-port=9223', WEBVIEW2_USER_DATA_FOLDER: path.join(folder, 'webview-data') },
+  env: { ...process.env, PATH: `${process.env.SystemRoot}\\System32;${process.env.SystemRoot}`, WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${debugPort}`, WEBVIEW2_USER_DATA_FOLDER: path.join(folder, `webview-data-${Date.now()}`) },
   stdio: 'ignore',
 });
 let browser;
 const errors = [];
 try {
   for (let retry = 0; retry < 40; retry++) {
-    try { browser = await chromium.connectOverCDP('http://127.0.0.1:9223'); break; }
+    try { browser = await chromium.connectOverCDP(`http://127.0.0.1:${debugPort}`); break; }
     catch { await new Promise(resolve => setTimeout(resolve, 500)); }
   }
   assert.ok(browser, 'Desktop WebView2 did not start');
@@ -54,6 +55,7 @@ try {
   await page.evaluate(() => localStorage.clear());
   await page.reload();
   await page.getByRole('heading', { name: 'Tools', exact: true }).waitFor();
+  await page.locator('.sidebar').getByRole('button', { name: 'Image Converter', exact: true }).waitFor();
   assert.equal(await page.locator('.preview-banner').count(), 0);
   const info = await page.evaluate(() => window.__TAURI_INTERNALS__.invoke('app_info'));
   assert.ok(info.engines.every(engine => engine.path && engine.version));
@@ -72,7 +74,7 @@ try {
     }
     if (tool === 'Merge PDFs') {
       await page.getByRole('button', { name: 'Move first café.pdf up', exact: true }).click();
-      assert.equal(await page.locator('.file-detail strong').first().textContent(), 'first café.pdf');
+      assert.equal(await page.locator('.file-detail .file-link').first().textContent(), 'first café.pdf');
       await page.getByRole('textbox', { name: 'Document name' }).fill('desktop merged');
     }
     await page.locator('.convert-button').click();
@@ -80,7 +82,7 @@ try {
     const row = page.locator('.job-row').first();
     await row.locator('.job-status.completed').waitFor({ timeout: 20000 });
   }
-  await page.locator('.sidebar').getByRole('button', { name: 'Images', exact: true }).click();
+  await page.locator('.sidebar').getByRole('button', { name: 'Image Converter', exact: true }).click();
   await page.evaluate(inputs => window.__TAURI_INTERNALS__.invoke('plugin:event|emit', { event: 'tauri://drag-drop', payload: { paths: inputs, position: { x: 400, y: 300 } } }), [image]);
   const size = page.locator('[data-testid="image-preview-size"][data-bytes]');
   await size.waitFor();
@@ -96,8 +98,37 @@ try {
   await size.waitFor();
   const lowQualityBytes = Number(await size.getAttribute('data-bytes'));
   await page.getByRole('slider', { name: /Quality/ }).press('End');
-  await page.getByRole('button', { name: 'Preview changes', exact: true }).click();
   await page.getByRole('img', { name: 'Output preview', exact: true }).waitFor();
+  await page.getByRole('button', { name: 'Enlarge output preview', exact: true }).click();
+  const viewer = page.getByRole('dialog', { name: 'Output preview', exact: true });
+  await viewer.waitFor();
+  await page.waitForFunction(() => {
+    const area = document.querySelector('.viewer-viewport'); const img = area?.querySelector('img');
+    if (!img?.naturalWidth) return false;
+    const fit = Math.min((area.clientWidth - 32) / img.naturalWidth, (area.clientHeight - 32) / img.naturalHeight);
+    return Math.abs(img.getBoundingClientRect().width / img.naturalWidth - fit) < .01;
+  });
+  const initialZoom = Number((await viewer.locator('output').textContent()).replace('%', ''));
+  assert.ok(initialZoom > 100, 'Small previews should enlarge to fit the window');
+  await viewer.getByRole('button', { name: 'Zoom in', exact: true }).click();
+  const enlargedZoom = Number((await viewer.locator('output').textContent()).replace('%', ''));
+  assert.ok(Math.abs(enlargedZoom - initialZoom * 1.25) <= 1);
+  await viewer.getByRole('slider', { name: 'Image zoom' }).fill(String(Math.round(initialZoom * 2)));
+  const panArea = viewer.locator('.viewer-viewport');
+  const bounds = await panArea.boundingBox();
+  await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(bounds.x + bounds.width / 2 - 100, bounds.y + bounds.height / 2 - 80, { steps: 5 });
+  await page.mouse.up();
+  assert.ok(await panArea.evaluate(element => element.scrollLeft >= 95 && element.scrollTop >= 75), 'Dragging should pan both axes');
+  await viewer.getByRole('slider', { name: 'Image zoom' }).fill('300');
+  assert.equal(await viewer.locator('output').textContent(), '300%');
+  await viewer.getByRole('button', { name: '100%', exact: true }).click();
+  await viewer.locator('.viewer-viewport').hover();
+  await page.mouse.wheel(0, -100);
+  await page.waitForFunction(() => document.querySelector('.viewer-zoom output')?.textContent === '110%');
+  await page.keyboard.press('Escape');
+  assert.equal(await viewer.count(), 0);
   await page.waitForFunction(previous => Number(document.querySelector('[data-testid="image-preview-size"]')?.getAttribute('data-bytes')) > previous, lowQualityBytes);
   const previewBytes = Number(await size.getAttribute('data-bytes'));
   assert.equal(await page.locator('.preview-row').getAttribute('data-width'), '80');
@@ -108,7 +139,7 @@ try {
   const imageJobs = await page.evaluate(() => window.__TAURI_INTERNALS__.invoke('list_jobs'));
   assert.equal(statSync(imageJobs.find(job => job.kind === 'image').output).size, previewBytes);
   for (const format of ['mp3', 'ogg', 'wav', 'flac', 'm4a']) {
-    await page.locator('.sidebar').getByRole('button', { name: 'Audio', exact: true }).click();
+    await page.locator('.sidebar').getByRole('button', { name: 'Audio Converter', exact: true }).click();
     await page.getByRole('combobox', { name: 'Format', exact: true }).selectOption(format);
     await page.evaluate(inputs => window.__TAURI_INTERNALS__.invoke('plugin:event|emit', { event: 'tauri://drag-drop', payload: { paths: inputs, position: { x: 400, y: 300 } } }), [audio]);
     await page.locator('.file-row').waitFor();
@@ -116,7 +147,7 @@ try {
     await page.locator('.job-row').first().locator('.job-status.completed').waitFor({ timeout: 20000 });
   }
   for (const format of ['mp4', 'mkv', 'webm', 'mov']) {
-    await page.locator('.sidebar').getByRole('button', { name: 'Video', exact: true }).click();
+    await page.locator('.sidebar').getByRole('button', { name: 'Video Converter', exact: true }).click();
     await page.getByRole('combobox', { name: 'Format', exact: true }).selectOption(format);
     await page.getByRole('combobox', { name: 'Resolution', exact: true }).selectOption('720');
     await page.getByRole('combobox', { name: 'Frame rate', exact: true }).selectOption('15');
@@ -160,7 +191,6 @@ try {
   await page.getByRole('spinbutton', { name: 'Height (px)' }).fill('80');
   await page.getByRole('combobox', { name: 'Center crop' }).selectOption('1:1');
   await page.getByRole('combobox', { name: 'Rotate clockwise' }).selectOption('90');
-  await page.getByRole('button', { name: 'Preview changes', exact: true }).click();
   await page.getByRole('img', { name: 'Output preview', exact: true }).waitFor();
   await page.waitForFunction(() => [...document.querySelectorAll('.comparison img')].every(img => img.naturalWidth > 0));
   await page.screenshot({ path: '.tools/desktop-image-edit.png', fullPage: true });
@@ -221,8 +251,45 @@ try {
   await page.getByRole('dialog', { name: 'Output preview' }).waitFor();
   await page.getByRole('button', { name: 'Close preview', exact: true }).click();
   await page.screenshot({ path: '.tools/desktop-toolbox-queue.png', fullPage: true });
+  await navigate('Settings');
+  await page.getByRole('combobox', { name: 'Appearance', exact: true }).selectOption('dark');
+  await page.getByRole('checkbox', { name: 'Automatically preview image changes' }).uncheck();
+  await navigate('Image Converter');
+  await page.getByRole('slider', { name: 'Resolution', exact: true }).fill('70');
+  await page.waitForTimeout(600);
+  assert.equal(await page.getByRole('img', { name: 'Output preview', exact: true }).count(), 0);
+  await page.getByRole('button', { name: 'Preview changes', exact: true }).click();
+  await page.getByRole('img', { name: 'Output preview', exact: true }).waitFor();
+  // A removed fixture exercises both native commands without launching another app.
+  const missingSource = path.join(folder, 'removed source.png');
+  copyFileSync(image, missingSource);
+  await drop([missingSource]);
+  await page.getByRole('link', { name: 'removed source.png', exact: true }).waitFor();
+  unlinkSync(missingSource);
+  await page.getByRole('link', { name: 'removed source.png', exact: true }).click();
+  await page.locator('.toast.error').waitFor();
+  assert.match(await page.locator('.toast.error').innerText(), /system cannot find|No such file|os error 2/i);
+  await page.getByRole('button', { name: 'Dismiss notification', exact: true }).click();
+  await page.getByRole('button', { name: 'Reveal removed source.png in file explorer', exact: true }).click();
+  await page.locator('.toast.error').waitFor();
+  assert.match(await page.locator('.toast.error').innerText(), /system cannot find|No such file|os error 2/i);
+  await page.getByRole('button', { name: 'Remove removed source.png', exact: true }).click();
+  await page.getByRole('button', { name: 'Dismiss notification', exact: true }).click();
+  await page.getByRole('button', { name: 'Enlarge original image', exact: true }).click();
+  await page.getByRole('dialog', { name: 'Original image', exact: true }).waitFor();
+  await page.getByRole('button', { name: 'Close image preview', exact: true }).click();
+  await navigate('Settings');
+  await page.getByRole('checkbox', { name: 'Automatically preview image changes' }).check();
+  await navigate('Resize, crop & rotate');
+  await page.getByRole('spinbutton', { name: 'Width (px)' }).fill('60');
+  await page.getByRole('img', { name: 'Output preview', exact: true }).waitFor();
+  await page.screenshot({ path: '.tools/desktop-dark-image-edit.png', fullPage: true });
+  await page.reload();
+  assert.equal(await page.locator('html').getAttribute('data-theme'), 'dark');
+  await navigate('Settings');
+  assert.equal(await page.getByRole('checkbox', { name: 'Automatically preview image changes' }).isChecked(), true);
   assert.deepEqual(errors, []);
-  console.log('Desktop checks passed: all 14 tools, previews, source retention, mouse navigation, all audio/video formats, and verified size limits.');
+  console.log('Desktop checks passed: all 14 tools, automatic/manual image previews, zoom viewer, file actions, saved theme, source retention, all audio/video formats, and verified size limits.');
 } finally {
   if (browser) await browser.close();
   app.kill();

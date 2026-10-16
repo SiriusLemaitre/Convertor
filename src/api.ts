@@ -31,6 +31,7 @@ export const api = {
   clear: () => invoke<void>('clear_finished'),
   settings: (settings: Settings) => invoke<AppInfo>('save_settings', { settings }),
   reveal: (path: string) => invoke<void>('reveal_file', { path }),
+  open: (path: string) => invoke<void>('open_file', { path }),
   previewImages: (request: JobRequest, revision: number) => invoke<ImagePreview[]>('preview_images', { request, revision }),
   cancelPreview: (revision: number) => invoke<void>('cancel_image_preview', { revision }),
   estimateVideos: (request: JobRequest) => invoke<VideoEstimate[]>('estimate_videos', { request }),

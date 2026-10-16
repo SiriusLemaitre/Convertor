@@ -153,10 +153,26 @@ fn cancel_job(id: String, state: tauri::State<'_, AppState>) -> Result<(), Strin
 #[tauri::command]
 fn clear_finished(state: tauri::State<'_, AppState>) { state.queue.clear(); }
 #[tauri::command]
+fn open_file(path: String) -> Result<(), String> {
+    let path = dunce::canonicalize(path).map_err(|e| e.to_string())?;
+    if !path.is_file() { return Err("File not found.".into()); }
+    #[cfg(windows)] let result = engine::command(Path::new("explorer.exe")).arg(&path).spawn();
+    #[cfg(target_os = "macos")] let result = engine::command(Path::new("open")).arg(&path).spawn();
+    #[cfg(target_os = "linux")] let result = engine::command(Path::new("xdg-open")).arg(&path).spawn();
+    result.map(|_| ()).map_err(|e| e.to_string())
+}
+#[tauri::command]
 fn reveal_file(path: String) -> Result<(), String> {
     let path = dunce::canonicalize(path).map_err(|e| e.to_string())?;
     let folder = if path.is_dir() { path.as_path() } else { path.parent().ok_or("Output folder not found")? };
-    #[cfg(windows)] let result = engine::command(Path::new("explorer.exe")).arg(folder).spawn();
+    #[cfg(windows)] let result = {
+        use std::os::windows::process::CommandExt;
+        let mut command = engine::command(Path::new("explorer.exe"));
+        // Explorer needs the switch outside the quoted filename. Command::arg
+        // quotes the entire /select,path argument when the path contains spaces.
+        if path.is_file() { command.raw_arg(format!("/select,\"{}\"", path.display())); } else { command.arg(folder); }
+        command.spawn()
+    };
     #[cfg(target_os = "macos")] let result = engine::command(Path::new("open")).arg(folder).spawn();
     #[cfg(target_os = "linux")] let result = engine::command(Path::new("xdg-open")).arg(folder).spawn();
     result.map(|_| ()).map_err(|e| e.to_string())
@@ -169,7 +185,7 @@ fn main() {
         settings.concurrency = settings.concurrency.clamp(1, 4);
         app.manage(AppState { queue: Queue::new(settings.concurrency), preview: PreviewManager::new(), visual: PreviewManager::new(), settings: Mutex::new(settings), config, resources: app.path().resource_dir()? });
         Ok(())
-    }).invoke_handler(tauri::generate_handler![app_info, save_settings, pick_files, inspect_files, pick_folder, pick_executable, enqueue, list_jobs, cancel_job, clear_finished, reveal_file, preview_images, cancel_image_preview, estimate_videos, visual_preview, cancel_visual_preview])
+    }).invoke_handler(tauri::generate_handler![app_info, save_settings, pick_files, inspect_files, pick_folder, pick_executable, enqueue, list_jobs, cancel_job, clear_finished, open_file, reveal_file, preview_images, cancel_image_preview, estimate_videos, visual_preview, cancel_visual_preview])
         .build(tauri::generate_context!()).expect("Could not start Convertor");
     app.run(|app, event| { if let tauri::RunEvent::Exit = event { let state = app.state::<AppState>(); state.preview.shutdown(); state.visual.shutdown(); state.queue.shutdown(); } });
 }

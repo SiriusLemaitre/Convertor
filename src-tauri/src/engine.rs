@@ -544,7 +544,11 @@ pub fn run_task(task: &Task, cancelled: &AtomicBool, mut progress: impl FnMut(f6
     commit_output(temporary, &task.folder, &task.stem, output_extension(request))
 }
 
-fn run_process(mut cmd: Command, cancelled: &AtomicBool, duration: f64, mut progress: impl FnMut(f64), allow_warnings: bool) -> Result<(), String> {
+fn run_process(cmd: Command, cancelled: &AtomicBool, duration: f64, progress: impl FnMut(f64), allow_warnings: bool) -> Result<(), String> {
+    run_process_guarded(cmd, cancelled, duration, progress, allow_warnings, None)
+}
+
+fn run_process_guarded(mut cmd: Command, cancelled: &AtomicBool, duration: f64, mut progress: impl FnMut(f64), allow_warnings: bool, stall_timeout: Option<Duration>) -> Result<(), String> {
     if cancelled.load(Ordering::Relaxed) { return Err("Cancelled".into()); }
     cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
     let mut child = cmd.spawn().map_err(|e| format!("Unable to start the conversion engine: {e}"))?;
@@ -566,16 +570,31 @@ fn run_process(mut cmd: Command, cancelled: &AtomicBool, duration: f64, mut prog
         }
         tail.into_iter().collect::<Vec<_>>().join("\n")
     });
+    let mut last_advance = std::time::Instant::now();
+    let mut furthest = f64::NEG_INFINITY;
     let result = loop {
-        for value in rx.try_iter() { progress(value); }
+        for value in rx.try_iter() {
+            if value.is_finite() && value > furthest {
+                furthest = value;
+                last_advance = std::time::Instant::now();
+            }
+            progress(value);
+        }
         if cancelled.load(Ordering::Relaxed) { stop_child(&mut child); break Err("Cancelled".into()); }
         match child.try_wait() {
             Ok(Some(status)) => break Ok(status),
-            Ok(None) => thread::sleep(Duration::from_millis(50)),
+            Ok(None) => {
+                if stall_timeout.is_some_and(|timeout| last_advance.elapsed() >= timeout) {
+                    stop_child(&mut child);
+                    break Err("Video compression stopped making progress. Try closing other conversions and retrying.".into());
+                }
+                thread::sleep(Duration::from_millis(50));
+            }
             Err(e) => { stop_child(&mut child); break Err(e.to_string()); }
         }
     };
     let _ = reader.join();
+    for value in rx.try_iter() { progress(value); }
     let error = errors.join().unwrap_or_default();
     let status = result?;
     if !status.success() && !(allow_warnings && status.code() == Some(3)) {
@@ -601,6 +620,16 @@ fn commit_output(mut temporary: tempfile::TempPath, folder: &Path, stem: &str, e
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    #[cfg(windows)]
+    fn stalled_encoder_is_stopped() {
+        let mut cmd = command(Path::new("powershell.exe"));
+        cmd.args(["-NoProfile", "-Command", "Start-Sleep -Seconds 30"]);
+        let started = std::time::Instant::now();
+        let error = run_process_guarded(cmd, &AtomicBool::new(false), 1.0, |_| {}, false, Some(Duration::from_millis(250))).unwrap_err();
+        assert!(error.contains("stopped making progress"), "{error}");
+        assert!(started.elapsed() < Duration::from_secs(10));
+    }
     fn request(kind: &str) -> JobRequest { JobRequest { kind: kind.into(), inputs: vec!["C:\\Videos\\clip with spaces.mp4".into()], output_dir: String::new(), output_name: "Merged document".into(), bitrate: 192, width: 640, fps: 15, start: 2.0, duration: Some(5.0), format: String::new(), image_width: 0, image_height: 0, keep_aspect: true, image_quality: 80, image_scale_percent: None, video_quality: 65, video_height: 0, video_fps: 0, pages: String::new(), operation: String::new(), target_mb: 10.0, rotation: 0, crop_ratio: String::new(), interval: 5.0, dpi: 150 } }
     #[test]
     fn output_never_overwrites_existing_files() {

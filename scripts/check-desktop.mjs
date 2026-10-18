@@ -115,12 +115,19 @@ try {
   assert.ok(Math.abs(enlargedZoom - initialZoom * 1.25) <= 1);
   await viewer.getByRole('slider', { name: 'Image zoom' }).fill(String(Math.round(initialZoom * 2)));
   const panArea = viewer.locator('.viewer-viewport');
+  await page.waitForFunction(() => {
+    const area = document.querySelector('.viewer-viewport');
+    return area.scrollWidth > area.clientWidth + 100 && area.scrollHeight > area.clientHeight + 80;
+  });
   const bounds = await panArea.boundingBox();
   await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
   await page.mouse.down();
   await page.mouse.move(bounds.x + bounds.width / 2 - 100, bounds.y + bounds.height / 2 - 80, { steps: 5 });
   await page.mouse.up();
-  assert.ok(await panArea.evaluate(element => element.scrollLeft >= 95 && element.scrollTop >= 75), 'Dragging should pan both axes');
+  await page.waitForFunction(() => {
+    const area = document.querySelector('.viewer-viewport');
+    return area.scrollLeft >= 95 && area.scrollTop >= 75;
+  });
   await viewer.getByRole('slider', { name: 'Image zoom' }).fill('300');
   assert.equal(await viewer.locator('output').textContent(), '300%');
   await viewer.getByRole('button', { name: '100%', exact: true }).click();
@@ -186,6 +193,16 @@ try {
     await page.locator('.job-row').first().locator('.job-status.completed').waitFor({ timeout: 30000 });
     return (await page.evaluate(() => window.__TAURI_INTERNALS__.invoke('list_jobs')))[0];
   };
+  const waitForBatch = async (kind, count) => {
+    let jobs;
+    for (let attempt = 0; attempt < 120; attempt++) {
+      jobs = (await page.evaluate(() => window.__TAURI_INTERNALS__.invoke('list_jobs'))).filter(job => job.kind === kind);
+      if (jobs.length === count && jobs.every(job => job.status === 'completed' && job.output)) return jobs;
+      assert.ok(!jobs.some(job => job.status === 'failed'), JSON.stringify(jobs));
+      await new Promise(resolve => setTimeout(resolve, 250));
+    }
+    assert.fail(`Batch did not complete: ${JSON.stringify(jobs)}`);
+  };
   await navigate('Resize, crop & rotate'); await drop([image]);
   await page.getByRole('spinbutton', { name: 'Width (px)' }).fill('80');
   await page.getByRole('spinbutton', { name: 'Height (px)' }).fill('80');
@@ -237,13 +254,12 @@ try {
   await navigate('Compress to size'); await drop([video,audio,image]);
   await page.getByRole('spinbutton', { name: 'Maximum size per file (MB)' }).fill('0.05');
   await exportJob();
-  await page.waitForFunction(async () => (await window.__TAURI_INTERNALS__.invoke('list_jobs')).filter(j => j.kind === 'compress').every(j => j.status === 'completed'), null, { timeout: 30000 });
-  const compressed = (await page.evaluate(() => window.__TAURI_INTERNALS__.invoke('list_jobs'))).filter(j => j.kind === 'compress');
+  const compressed = await waitForBatch('compress', 3);
   assert.equal(compressed.length,3);
   for (const job of compressed) assert.ok(statSync(job.output).size <= 50000);
   await navigate('Remove metadata'); await drop([video,audio,image,merged]);
   await exportJob();
-  await page.waitForFunction(async () => (await window.__TAURI_INTERNALS__.invoke('list_jobs')).filter(j => j.kind === 'metadata').every(j => j.status === 'completed'), null, { timeout: 30000 });
+  await waitForBatch('metadata', 4);
   const completed = await page.evaluate(() => window.__TAURI_INTERNALS__.invoke('list_jobs'));
   assert.equal(completed.length,30);
   assert.ok(completed.every(j => j.status === 'completed'),JSON.stringify(completed.filter(j => j.status !== 'completed')));

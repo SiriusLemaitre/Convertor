@@ -26,7 +26,8 @@ jobs:
         run: |
           npm test
           if ($LASTEXITCODE -ne 0) { throw 'Frontend tests failed' }
-          cargo test --manifest-path src-tauri/Cargo.toml
+          $env:CONVERTOR_ENGINE_DIR = (Resolve-Path src-tauri/binaries).Path
+          cargo test --manifest-path src-tauri/Cargo.toml -- --include-ignored
           if ($LASTEXITCODE -ne 0) { throw 'Native tests failed' }
       - name: Build installer
         shell: pwsh

@@ -18,7 +18,7 @@ export default function PreviewPanel({ request, onSelection, autoImagePreview = 
   const source = request.inputs[0];
   const extension = source?.split('.').pop()?.toLowerCase() || '';
   const image = ['png','jpg','jpeg','webp','bmp','tiff','tif','gif'].includes(extension);
-  const audio = ['mp3','ogg','wav','flac','m4a','aac','opus','aiff','aif','wma'].includes(extension);
+  const audio = ['mp3','ogg','wav','flac','m4a','aac','opus','aiff','aif','wma','ac3'].includes(extension);
   const pdf = extension === 'pdf';
   const encodedRequest = JSON.stringify(request);
   useEffect(() => {

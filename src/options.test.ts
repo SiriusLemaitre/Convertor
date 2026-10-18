@@ -11,6 +11,7 @@ describe('tool requests and validation', () => {
   });
   it('keeps format settings separate for each conversion tool', () => {
     expect(requestFor('audio', [], {...p,audioFormat:'flac'}).format).toBe('flac');
+    expect(requestFor('mp3', [], {...p,audioFormat:'opus',format:'png'}).format).toBe('opus');
     expect(requestFor('video', [], {...p,video:{...p.video,format:'webm'}}).format).toBe('webm');
     expect(requestFor('image', [], {...p,image:{...p.image,format:'jpg',scale:50}})).toMatchObject({format:'jpg',imageScalePercent:50});
   });

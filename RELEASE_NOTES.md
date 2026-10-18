@@ -1,11 +1,9 @@
-Convertor now includes a YouTube section for downloading and converting individual video links in batches.
+Video to MP3 is now **Video to Audio**.
 
-- Audio: MP3, M4A, OGG, WAV, FLAC.
-- Video: MP4, MKV, WebM, MOV, with best available or maximum 360p–2160p resolution.
-- Animated GIF: width and frame rate controls.
-- Bundled yt-dlp and Deno; no separate Python or runtime installation required.
-- Existing local conversion, PDF, image, media editing, previews, and job queue tools included.
+- Accepts any video format supported by bundled FFmpeg, including files with uncommon or missing extensions.
+- Exports MP3, M4A, AAC, OGG, Opus, WAV, FLAC, AIFF, WMA, and AC3.
+- Audio bitrate and quality controls follow the selected format.
+- Detects files without video or audio streams before conversion.
+- Existing options and presets are retained.
 
-Windows 10/11, 64-bit: download and run **Convertor_0.2.0_x64-setup.exe**. The installer includes processing engines and installs WebView2 if needed. Alternatively, extract the entire portable ZIP and run Convertor.exe.
-
-Builds are unsigned, so Windows may show an unknown publisher notice. YouTube availability depends on the service and some videos may require authentication or be unavailable. Local file tools work offline; YouTube downloads need an internet connection.
+Windows 10/11, 64-bit: run **Convertor_0.2.1_x64-setup.exe**, or extract the entire portable ZIP and launch Convertor.exe. Processing engines are included. Builds are unsigned.

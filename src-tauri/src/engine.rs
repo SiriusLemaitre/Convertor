@@ -80,9 +80,11 @@ fn default_quality() -> u32 { 80 }
 pub const IMAGE_FORMATS: &[&str] = &["png", "jpg", "webp", "bmp", "tiff"];
 pub const IMAGE_INPUTS: &[&str] = &["png", "jpg", "jpeg", "webp", "bmp", "tif", "tiff"];
 pub const AUDIO_FORMATS: &[&str] = &["mp3", "ogg", "wav", "flac", "m4a"];
+pub const VIDEO_AUDIO_FORMATS: &[&str] = &["mp3", "m4a", "aac", "ogg", "opus", "wav", "flac", "aiff", "wma", "ac3"];
 pub const AUDIO_INPUTS: &[&str] = &["mp3", "ogg", "wav", "flac", "m4a", "aac", "opus", "aiff", "aif", "wma"];
 
 pub fn output_extension(request: &JobRequest) -> &str {
+    if request.kind == "mp3" { return if request.format.is_empty() { "mp3" } else { &request.format }; }
     if toolbox::is_tool(request) { return toolbox::extension(request); }
     if ["image", "audio", "video"].contains(&request.kind.as_str()) { &request.format } else { &request.kind }
 }
@@ -286,6 +288,7 @@ pub fn validate(request: &JobRequest) -> Result<(), String> {
     if request.inputs.is_empty() || (request.kind == "pdf" && request.inputs.len() < 2) { return Err("Select source files first (at least two for PDF merging).".into()); }
     if (request.kind == "mp3" || request.kind == "audio") && ![128, 192, 320].contains(&request.bitrate) { return Err("Unsupported audio bitrate".into()); }
     if request.kind == "audio" && !AUDIO_FORMATS.contains(&request.format.as_str()) { return Err("Unsupported audio format".into()); }
+    if request.kind == "mp3" && !VIDEO_AUDIO_FORMATS.contains(&output_extension(request)) { return Err("Unsupported audio output format.".into()); }
     if request.kind == "image" {
         if request.image_scale_percent.is_some_and(|percent| !(1..=100).contains(&percent)) { return Err("Image resolution must be greater than 0% and at most 100%.".into()); }
         if !IMAGE_FORMATS.contains(&request.format.as_str()) { return Err("Unsupported image format".into()); }
@@ -299,6 +302,7 @@ pub fn validate(request: &JobRequest) -> Result<(), String> {
         if !path.is_absolute() || !path.is_file() { return Err(format!("File is unavailable: {input}")); }
         let extension = path.extension().unwrap_or_default().to_string_lossy().to_lowercase();
         let supported = match request.kind.as_str() {
+            "mp3" => true, // FFprobe validates streams rather than trusting filename extensions.
             "pdf" => extension == "pdf",
             "image" => IMAGE_INPUTS.contains(&extension.as_str()),
             "audio" => AUDIO_INPUTS.contains(&extension.as_str()),
@@ -349,6 +353,11 @@ pub fn media_args(request: &JobRequest, output: &Path, palette: Option<&Path>) -
             "wav" => ("pcm_s16le", "wav"),
             "flac" => ("flac", "flac"),
             "m4a" => ("aac", "ipod"),
+            "aac" => ("aac", "adts"),
+            "opus" => ("libopus", "opus"),
+            "aiff" => ("pcm_s16be", "aiff"),
+            "wma" => ("wmav2", "asf"),
+            "ac3" => ("ac3", "ac3"),
             _ => ("libmp3lame", "mp3"),
         };
         args.extend(["-c:a".into(), codec.into()]);
@@ -356,7 +365,8 @@ pub fn media_args(request: &JobRequest, output: &Path, palette: Option<&Path>) -
             // Vorbis quality mode preserves source channels/rate without invalid mono bitrate targets.
             let quality = match request.bitrate { 128 => "4", 192 => "6", _ => "9" };
             args.extend(["-q:a".into(), quality.into()]);
-        } else if !["wav", "flac"].contains(&format) { args.extend(["-b:a".into(), format!("{}k", request.bitrate)]); }
+        } else if !["wav", "flac", "aiff"].contains(&format) { args.extend(["-b:a".into(), format!("{}k", request.bitrate)]); }
+        if ["wma", "ac3", "opus"].contains(&format) { args.extend(["-ac".into(), "2".into()]); }
         if format == "m4a" { args.extend(["-movflags".into(), "+faststart".into()]); }
         args.extend(["-f".into(), muxer.into()]);
     } else {
@@ -490,6 +500,16 @@ pub fn run_task(task: &Task, cancelled: &AtomicBool, mut progress: impl FnMut(f6
     if task.request.kind == "youtube" { return crate::youtube::run(task, cancelled, &mut progress); }
     if toolbox::is_tool(&task.request) { return toolbox::run(task, cancelled, progress); }
     if cancelled.load(Ordering::Relaxed) { return Err("Cancelled".into()); }
+    if task.request.kind == "mp3" {
+        let probe = task.engine.with_file_name(if cfg!(windows) { "ffprobe.exe" } else { "ffprobe" });
+        let mut cmd = command(&probe);
+        cmd.args(["-v", "error", "-show_streams", "-of", "json"]).arg(&task.request.inputs[0]);
+        let text = output_with_timeout(cmd, Some(cancelled)).map_err(|e| format!("Cannot inspect this video. FFprobe must be beside FFmpeg. {e}"))?;
+        let data: serde_json::Value = serde_json::from_str(&text).map_err(|e| e.to_string())?;
+        let streams = data["streams"].as_array().ok_or("No media streams found in this file.")?;
+        if !streams.iter().any(|s| s["codec_type"] == "video" && s["disposition"]["attached_pic"].as_u64() != Some(1)) { return Err("This file does not contain a video stream.".into()); }
+        if !streams.iter().any(|s| s["codec_type"] == "audio") { return Err("This video has no audio track to extract.".into()); }
+    }
     let temporary = tempfile::Builder::new().prefix(".convertor-").suffix(".partial").tempfile_in(&task.folder).map_err(|e| format!("Cannot write to the output folder: {e}"))?.into_temp_path();
     let request = &task.request;
     let mut cmd = command(&task.engine);
@@ -847,6 +867,39 @@ mod tests {
             assert!(run_task(&task, &AtomicBool::new(false), |_| {}).is_ok());
         }
         assert_eq!(fs::read(source).unwrap(), original);
+    }
+    #[test]
+    #[ignore = "Requires bundled FFmpeg and FFprobe"]
+    fn native_video_to_all_audio_formats_without_extension_filter() {
+        let folder = tempfile::tempdir().unwrap();
+        let source = folder.path().join("video.uncommon-extension");
+        let ffmpeg = native_engine("ffmpeg");
+        let result = command(&ffmpeg).args(["-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc2=size=160x120:rate=10", "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=44100", "-t", "0.5", "-c:v", "libx264", "-c:a", "aac", "-f", "matroska"]).arg(&source).output().unwrap();
+        assert!(result.status.success(), "{}", String::from_utf8_lossy(&result.stderr));
+        let codecs = ["mp3", "aac", "aac", "vorbis", "opus", "pcm_s16le", "flac", "pcm_s16be", "wmav2", "ac3"];
+        for (format, codec) in VIDEO_AUDIO_FORMATS.iter().zip(codecs) {
+            let mut req = request("mp3"); req.inputs = vec![source.to_string_lossy().into()]; req.format = (*format).into(); req.bitrate = 320;
+            validate(&req).unwrap();
+            let task = Task { request: req, engine: ffmpeg.clone(), folder: folder.path().to_path_buf(), stem: "extracted".into() };
+            let output = run_task(&task, &AtomicBool::new(false), |_| {}).unwrap_or_else(|e| panic!("{format}: {e}"));
+            assert_eq!(output.extension().unwrap().to_string_lossy(), *format);
+            let mut probe = command(&native_engine("ffprobe"));
+            probe.args(["-v", "error", "-show_streams", "-of", "json"]).arg(&output);
+            let streams: serde_json::Value = serde_json::from_str(&output_with_timeout(probe, None).unwrap()).unwrap();
+            assert_eq!(streams["streams"].as_array().unwrap().len(), 1);
+            assert_eq!(streams["streams"][0]["codec_name"], codec);
+            assert_eq!(streams["streams"][0]["codec_type"], "audio");
+            if *format == "wav" {
+                let mut audio_only = task.clone(); audio_only.request.inputs = vec![output.to_string_lossy().into()];
+                assert!(run_task(&audio_only, &AtomicBool::new(false), |_| {}).unwrap_err().contains("video stream"));
+            }
+        }
+        let silent = folder.path().join("silent.mp4");
+        assert!(command(&ffmpeg).args(["-hide_banner", "-loglevel", "error", "-i"]).arg(&source).args(["-an", "-c:v", "copy"]).arg(&silent).output().unwrap().status.success());
+        let mut req = request("mp3"); req.inputs = vec![silent.to_string_lossy().into()];
+        let task = Task { request: req, engine: ffmpeg, folder: folder.path().to_path_buf(), stem: "no-audio".into() };
+        assert!(run_task(&task, &AtomicBool::new(false), |_| {}).unwrap_err().contains("no audio track"));
+        assert!(!fs::read_dir(folder.path()).unwrap().any(|p| p.unwrap().file_name().to_string_lossy().starts_with(".convertor-")));
     }
     #[test]
     fn full_video_has_no_seek_or_duration_limit() {

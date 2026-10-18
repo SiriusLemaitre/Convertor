@@ -29,6 +29,12 @@ try {
   await page.locator('.tool-card').click(); await heading('Video to GIF');
   await page.getByRole('button',{name:'Trim',exact:true}).click();
   await page.getByRole('spinbutton',{name:'End (seconds)'}).fill('10');
+  await nav('Video to Audio'); await heading('Video to Audio');
+  assert.equal(await page.getByRole('combobox', { name: 'Format', exact: true }).locator('option').count(), 10);
+  await page.getByRole('combobox', { name: 'Format', exact: true }).selectOption('flac');
+  assert.equal(await page.getByText('Bitrate', { exact: true }).count(), 0);
+  await page.getByRole('combobox', { name: 'Format', exact: true }).selectOption('mp3');
+  await page.screenshot({ path: '.tools/video-audio-preview.png', fullPage: true });
   await nav('YouTube Converter'); await heading('YouTube Converter');
   await page.getByRole('textbox', { name: 'YouTube URLs' }).fill('https://youtu.be/test');
   const format = page.getByRole('combobox', { name: 'Format', exact: true });

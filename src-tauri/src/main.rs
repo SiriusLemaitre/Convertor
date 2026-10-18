@@ -73,7 +73,9 @@ async fn save_settings(settings: Settings, state: tauri::State<'_, AppState>) ->
 
 #[tauri::command]
 async fn pick_files(extensions: Vec<String>) -> Result<Vec<InputFile>, String> {
-    let selected = rfd::AsyncFileDialog::new().set_title("Choose source files").add_filter("Supported files", &extensions).pick_files().await;
+    let dialog = rfd::AsyncFileDialog::new().set_title("Choose source files");
+    let dialog = if extensions.iter().any(|e| e == "*") { dialog } else { dialog.add_filter("Supported files", &extensions) };
+    let selected = dialog.pick_files().await;
     inspect_files(selected.unwrap_or_default().iter().map(|file| file.path().to_string_lossy().into()).collect())
 }
 #[tauri::command]

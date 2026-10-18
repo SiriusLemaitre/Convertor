@@ -64,7 +64,7 @@ try {
   await page.screenshot({ path: '.tools/desktop-home.png', fullPage: true });
   // Supply a native drop event without operating a modal file picker.
   // Inspection, validation, job submission, and conversion all use real Rust commands.
-  for (const tool of ['Video to MP3', 'Video to GIF', 'Merge PDFs']) {
+  for (const tool of ['Video to Audio', 'Video to GIF', 'Merge PDFs']) {
     await page.locator('.sidebar').getByRole('button', { name: tool, exact: true }).click();
     await page.evaluate(inputs => window.__TAURI_INTERNALS__.invoke('plugin:event|emit', { event: 'tauri://drag-drop', payload: { paths: inputs, position: { x: 400, y: 300 } } }), tool === 'Merge PDFs' ? [secondPdf, firstPdf] : [video]);
     await page.locator('.file-row').first().waitFor();

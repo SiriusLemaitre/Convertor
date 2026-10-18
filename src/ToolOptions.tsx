@@ -3,6 +3,7 @@ import ImageOptions, { imageFields, validImageSettings } from './ImageOptions';
 import VideoOptions from './VideoOptions';
 import type { InputFile, JobRequest } from './api';
 import type { ToolId } from './tools';
+import { videoAudioFormats } from './tools';
 import type { Preferences } from './preferences';
 
 export function requestFor(kind: ToolId, files: InputFile[], p: Preferences, outputDir = ''): JobRequest {
@@ -13,7 +14,7 @@ export function requestFor(kind: ToolId, files: InputFile[], p: Preferences, out
     pages: p.pages, operation: kind === 'frames' ? (p.operation === 'interval' ? 'interval' : 'single') : p.operation,
     targetMb: p.targetMb, imageWidth: p.imageWidth, imageHeight: p.imageHeight, keepAspect: p.keepAspect,
     imageQuality: 90, rotation: p.rotation, cropRatio: p.cropRatio, interval: p.interval, dpi: p.dpi,
-    ...(kind === 'image' ? imageFields(p.image) : kind === 'video' ? p.video : kind === 'audio' ? { format: p.audioFormat } : { format: p.format }),
+    ...(kind === 'image' ? imageFields(p.image) : kind === 'video' ? p.video : kind === 'audio' || kind === 'mp3' ? { format: p.audioFormat } : { format: p.format }),
   };
 }
 export function validOptions(kind: ToolId, p: Preferences) {
@@ -32,8 +33,9 @@ export default function ToolOptions({ kind, files, enabled, value: p, onChange }
   return <>
     {kind === 'image' && <ImageOptions files={files} enabled={enabled} value={p.image} onChange={next => onChange(s => ({ ...s, image: typeof next === 'function' ? next(s.image) : next }))} />}
     {kind === 'video' && <VideoOptions files={files} enabled={enabled} value={p.video} onChange={next => onChange(s => ({ ...s, video: typeof next === 'function' ? next(s.video) : next }))} />}
-    {kind === 'audio' && select('Format', 'audioFormat', ['mp3', 'ogg', 'wav', 'flac', 'm4a'].map(f => [f, f.toUpperCase()]))}
-    {(kind === 'mp3' || kind === 'audio' && !['wav', 'flac'].includes(p.audioFormat)) && <div className="field"><span>{p.audioFormat === 'ogg' && kind === 'audio' ? 'Quality' : 'Bitrate'}</span><div className="segmented">{[128,192,320].map((b, i) => <button key={b} className={p.bitrate === b ? 'active' : ''} onClick={() => set('bitrate', b)}>{kind === 'audio' && p.audioFormat === 'ogg' ? ['Small', 'Balanced', 'High'][i] : `${b} kbps`}</button>)}</div></div>}
+    {(kind === 'audio' || kind === 'mp3') && select('Format', 'audioFormat', (kind === 'mp3' ? videoAudioFormats : ['mp3', 'ogg', 'wav', 'flac', 'm4a']).map(f => [f, f.toUpperCase()]))}
+    {(kind === 'mp3' || kind === 'audio') && !['wav', 'flac', 'aiff'].includes(p.audioFormat) && <div className="field"><span>{p.audioFormat === 'ogg' ? 'Quality' : 'Bitrate'}</span><div className="segmented">{[128,192,320].map((b, i) => <button key={b} className={p.bitrate === b ? 'active' : ''} onClick={() => set('bitrate', b)}>{p.audioFormat === 'ogg' ? ['Small', 'Balanced', 'High'][i] : `${b} kbps`}</button>)}</div></div>}
+    {kind === 'mp3' && <p className="option-hint">Accepts any video format your FFmpeg engine can decode, including uncommon extensions. Exports the first audio track. WAV, FLAC, and AIFF use lossless encoding.</p>}
     {kind === 'gif' && <><div className="field-pair">{select('Max width', 'width', [320,480,640,960,1280].map(n => [n, `${n} px`]))}{select('Frame rate', 'fps', [10,15,24,30].map(n => [n, `${n} fps`]))}</div><div className="field"><span>Duration</span><div className="segmented"><button className={!p.trim ? 'active' : ''} aria-pressed={!p.trim} onClick={() => set('trim', false)}>Full video</button><button className={p.trim ? 'active' : ''} aria-pressed={p.trim} onClick={() => set('trim', true)}>Trim</button></div></div></>}
     {(kind === 'trim' || kind === 'gif' && p.trim) && <><div className="field-pair">{number('Start (seconds)', 'start', 0, .1)}{number('End (seconds)', 'end', .1, .1)}</div><p className="option-hint">Clip length: {Math.max(0, p.end - p.start).toFixed(2)} seconds. Use the preview to choose the start and end.</p></>}
     {(kind === 'pdf' || kind === 'images-pdf') && <label className="field"><span>Document name</span><input value={p.outputName} maxLength={100} onChange={e => set('outputName', e.target.value)} /></label>}

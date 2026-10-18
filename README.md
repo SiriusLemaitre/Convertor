@@ -10,7 +10,7 @@ Download the Windows installer from the [latest release](https://github.com/Siri
 
 On Windows, double-click `Start-Convertor.cmd`. If a portable build exists in `release/`, it opens directly. Otherwise the launcher uses the development setup.
 
-- **Video to MP3:** add one or more videos, select 128/192/320 kbps, and convert.
+- **Video to Audio:** add any video format supported by FFmpeg, regardless of its file extension. Export the first audio track as MP3, M4A, AAC, OGG, Opus, WAV, FLAC, AIFF, WMA, or AC3. Lossy formats offer bitrate or quality presets; WAV, FLAC, and AIFF use lossless encoding. Opus, WMA, and AC3 export stereo for consistent codec compatibility. Files without video or audio streams report a clear error. FFprobe must be beside FFmpeg.
 - **Video Converter:** batch-convert videos to MP4, MKV, WebM, or MOV. Adjust quality (1–100), resolution (original or up to 360p–2160p), and frame rate (original or up to 15–60 fps). Dimensions keep aspect ratio and never upscale; frame rates never exceed the source. MP4/MKV/MOV use H.264 + AAC; WebM uses VP9 + Opus. Size estimates use each video's duration and target bitrate, including audio and approximate container overhead. Actual size varies with content and may exceed the input size. The first video stream and optional first audio stream are exported; subtitles and additional tracks are omitted. FFprobe must be beside FFmpeg for this tool.
 - **Merge PDFs:** add at least two documents, reorder with the arrows, name the output, and merge.
 - **Video to GIF:** converts the full video by default. Choose max width and frame rate, or select **Trim** to set start and end times. GIFs loop continuously and use an optimized palette. Two streaming passes keep memory use bounded for long videos.

@@ -6,7 +6,8 @@ import assert from 'node:assert/strict';
 
 // Requires internet. Use a short public video, or pass a video URL as the first argument.
 const url = process.argv[2] || 'https://www.youtube.com/watch?v=jNQXAC9IVRw';
-const folder = path.resolve('.tools/youtube-smoke');
+const expectedTitle = process.argv[3] || (process.argv[2] ? null : 'Me at the zoo');
+const folder = path.resolve('.tools/youtube-smoke', `title-${Date.now()}`);
 mkdirSync(folder, { recursive: true });
 const port = 10000 + process.pid % 40000;
 const app = spawn(path.resolve('release/Convertor.exe'), [], {
@@ -27,7 +28,8 @@ try {
   assert.ok(info.engines.every(e => e.path), 'All engines must be bundled');
   const request = { kind: 'youtube', inputs: [url], outputDir: folder, outputName: 'YouTube smoke', format: 'mp3', bitrate: 192, width: 640, fps: 15, start: 0, duration: null, videoHeight: 360, videoQuality: 65 };
   await assert.rejects(invoke('enqueue', { request: { ...request, inputs: ['https://youtube.com.evil.invalid/watch?v=test'] } }));
-  for (const format of ['mp3', 'mp4']) {
+  const outputs = [];
+  for (const format of ['mp3', 'mp4', 'mp3']) {
     const [job] = await invoke('enqueue', { request: { ...request, format } });
     let result;
     for (let i = 0; i < 360; i++) {
@@ -37,6 +39,12 @@ try {
     }
     assert.equal(result.status, 'completed', result.error || 'Job timed out');
     assert.equal(path.extname(result.output), `.${format}`);
+    if (expectedTitle) {
+      const suffix = outputs.some(output => path.extname(output) === `.${format}`) ? ' (1)' : '';
+      assert.equal(path.basename(result.output), `${expectedTitle}${suffix}.${format}`, 'Output must use the video title and preserve existing downloads');
+    }
+    assert.ok(!outputs.includes(result.output), 'Repeated downloads must use separate filenames');
+    outputs.push(result.output);
     assert.ok(statSync(result.output).size > 0);
     const probe = JSON.parse(execFileSync(path.resolve('release/binaries/ffprobe.exe'), ['-v', 'error', '-show_streams', '-show_format', '-of', 'json', result.output], { encoding: 'utf8', windowsHide: true }));
     assert.ok(Number(probe.format.duration) > 0);

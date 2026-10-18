@@ -16,6 +16,20 @@ pub fn validate(r: &JobRequest) -> Result<(), String> {
     engine::validate_name(&r.output_name)
 }
 
+fn title_stem(title: &str) -> Option<String> {
+    let mut stem = String::new();
+    for c in title.chars() {
+        let c = if c.is_control() || "<>:\"/\\|?*".contains(c) { '_' } else { c };
+        if stem.len() + c.len_utf8() > 160 { break; }
+        stem.push(c);
+    }
+    let stem = stem.trim().trim_end_matches(['.', ' ']);
+    if stem.is_empty() { return None; }
+    // Prefix reserved Windows device names while preserving the readable title.
+    let stem = if engine::validate_name(stem).is_err() { format!("_{stem}") } else { stem.to_owned() };
+    Some(stem)
+}
+
 pub fn run(task: &Task, cancelled: &AtomicBool, progress: &mut dyn FnMut(f64)) -> Result<PathBuf, String> {
     let r = &task.request;
     let temporary = tempfile::Builder::new().prefix(".convertor-youtube-").tempdir_in(&task.folder).map_err(|e| e.to_string())?;
@@ -26,7 +40,9 @@ pub fn run(task: &Task, cancelled: &AtomicBool, progress: &mut dyn FnMut(f64)) -
     cmd.args(["--ignore-config", "--no-plugin-dirs", "--no-playlist", "--no-colors", "--newline", "--progress", "--no-cache-dir", "--socket-timeout", "30", "--retries", "3", "--match-filter", "!is_live", "--ffmpeg-location"])
         .arg(&task.engine).arg("--js-runtimes").arg(format!("deno:{}", r.inputs[2]))
         .args(["--format", &selector, "--merge-output-format", "mkv", "--output"])
-        .arg(temporary.path().join("source.%(ext)s")).arg("--").arg(&r.inputs[0]);
+        .arg(temporary.path().join("source.%(ext)s"))
+        .args(["--no-simulate", "--print-to-file", "%(title)j"])
+        .arg(temporary.path().join("title.json")).arg("--").arg(&r.inputs[0]);
     engine::run_process(cmd, cancelled, 0.0, |p| progress(p * 0.45), false)?;
     if cancelled.load(Ordering::Relaxed) { return Err("Cancelled".into()); }
     let source = std::fs::read_dir(temporary.path()).map_err(|e| e.to_string())?.filter_map(Result::ok)
@@ -38,13 +54,34 @@ pub fn run(task: &Task, cancelled: &AtomicBool, progress: &mut dyn FnMut(f64)) -
     conversion.start = 0.0;
     conversion.duration = None;
     conversion.video_fps = 0;
+    let stem = std::fs::read_to_string(temporary.path().join("title.json")).ok()
+        .and_then(|text| serde_json::from_str::<String>(&text).ok())
+        .and_then(|title| title_stem(&title)).unwrap_or_else(|| task.stem.clone());
     progress(45.0);
-    engine::run_task(&Task { request: conversion, ..task.clone() }, cancelled, |p| progress(45.0 + p * 0.55))
+    engine::run_task(&Task { request: conversion, stem, ..task.clone() }, cancelled, |p| progress(45.0 + p * 0.55))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn titles_become_safe_readable_filenames() {
+        for (title, expected) in [
+            ("  My video title  ", Some("My video title")),
+            ("Beyoncé 日本語 🎵", Some("Beyoncé 日本語 🎵")),
+            ("A/B\\C: D?\"<>|*\n", Some("A_B_C_ D_______")),
+            ("CON", Some("_CON")), ("nul.mp3", Some("_nul.mp3")),
+            ("Video... ", Some("Video")), (" . . ", None), ("", None),
+        ] {
+            let result = title_stem(title);
+            assert_eq!(result.as_deref(), expected, "{title:?}");
+            if let Some(stem) = result { assert!(engine::validate_name(&stem).is_ok()); }
+        }
+        let long = title_stem(&"🎵".repeat(100)).unwrap();
+        assert_eq!(long.len(), 160);
+        assert!(engine::validate_name(&long).is_ok());
+    }
+
     #[test]
     fn accepts_only_youtube_video_urls() {
         for url in ["https://youtu.be/abc", "https://www.youtube.com/watch?v=abc&list=123", "https://youtube.com/shorts/abc", "https://music.youtube.com/watch?v=abc"] { assert!(valid_url(url), "{url}"); }

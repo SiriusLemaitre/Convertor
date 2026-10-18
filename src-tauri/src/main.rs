@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 mod engine;
+mod youtube;
 use engine::{ImagePreview, Job, JobRequest, PreviewManager, Queue, Settings, Task};
 use serde::Serialize;
 use std::{fs, path::{Path, PathBuf}, sync::{Arc, Mutex}};
@@ -26,7 +27,7 @@ fn find_engine(name: &str, custom: &str, resources: &Path) -> Option<PathBuf> {
     folders.into_iter().map(|folder| folder.join(&executable)).find(|path| path.is_file())
 }
 fn info(settings: Settings, resources: &Path) -> AppInfo {
-    let engines = [("FFmpeg", "ffmpeg", &settings.ffmpeg_path), ("qpdf", "qpdf", &settings.qpdf_path), ("PDF renderer", "pdftoppm", &settings.pdf_renderer_path)].into_iter().map(|(display, name, custom)| {
+    let engines = [("FFmpeg", "ffmpeg", &settings.ffmpeg_path), ("qpdf", "qpdf", &settings.qpdf_path), ("PDF renderer", "pdftoppm", &settings.pdf_renderer_path), ("YouTube downloader", "yt-dlp", &String::new()), ("JavaScript runtime", "deno", &String::new())].into_iter().map(|(display, name, custom)| {
         let path = find_engine(name, custom, resources);
         let version = path.as_ref().and_then(|path| {
             let mut cmd = engine::command(path);
@@ -95,6 +96,22 @@ async fn pick_executable() -> Option<String> {
 
 #[tauri::command]
 fn enqueue(mut request: JobRequest, state: tauri::State<'_, AppState>) -> Result<Vec<Job>, String> {
+    if request.kind == "youtube" {
+        youtube::validate(&request)?;
+        let settings = state.settings.lock().unwrap().clone();
+        let ffmpeg = find_engine("ffmpeg", &settings.ffmpeg_path, &state.resources).ok_or("FFmpeg is unavailable.")?;
+        let downloader = find_engine("yt-dlp", "", &state.resources).ok_or("YouTube downloader is unavailable. Run scripts/setup-youtube.ps1.")?;
+        let runtime = find_engine("deno", "", &state.resources).ok_or("YouTube JavaScript runtime is unavailable. Run scripts/setup-youtube.ps1.")?;
+        let folder = dunce::canonicalize(&request.output_dir).map_err(|_| "Choose an existing output folder for YouTube downloads.")?;
+        if !folder.is_dir() { return Err("Choose an output folder.".into()); }
+        let mut tasks = vec![];
+        for (index, url) in request.inputs.iter().enumerate() {
+            let mut single = request.clone();
+            single.inputs = vec![url.clone(), downloader.to_string_lossy().into(), runtime.to_string_lossy().into()];
+            tasks.push(Task { request: single, engine: ffmpeg.clone(), folder: folder.clone(), stem: format!("{} {}", request.output_name.trim(), index + 1) });
+        }
+        return Ok(state.queue.submit(tasks));
+    }
     // Canonical paths prevent relative filenames from being interpreted as engine switches.
     for input in &mut request.inputs { *input = dunce::canonicalize(&input).map_err(|e| format!("Cannot open {input}: {e}"))?.to_string_lossy().into(); }
     engine::validate(&request)?;

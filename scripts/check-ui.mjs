@@ -8,8 +8,8 @@ const nav = name => page.locator('.sidebar').getByRole('button',{name,exact:true
 try {
   await page.goto('http://127.0.0.1:1420',{waitUntil:'networkidle'});
   await heading('Tools');
-  assert.equal(await page.locator('.tool-card').count(),14);
-  assert.equal(await page.locator('.tool-category').count(),5);
+  assert.equal(await page.locator('.tool-card').count(),15);
+  assert.equal(await page.locator('.tool-category').count(),6);
   for (const [category, converter] of [['Images', 'Image Converter'], ['Audio', 'Audio Converter'], ['Video', 'Video Converter']]) {
     const group = page.locator('.tool-category').filter({ has: page.getByRole('heading', { name: category, exact: true }) });
     assert.equal(await group.locator('.tool-card h3').first().textContent(), converter);
@@ -24,11 +24,23 @@ try {
   await page.getByRole('group',{name:'Filter by category'}).getByRole('button',{name:'Audio',exact:true}).click();
   assert.equal(await page.locator('.tool-card').count(),3);
   await page.getByRole('group',{name:'Filter by category'}).getByRole('button',{name:'All',exact:true}).click();
-  await page.getByRole('textbox',{name:'Find a tool'}).fill('gif');
+  await page.getByRole('textbox',{name:'Find a tool'}).fill('looping');
   assert.equal(await page.locator('.tool-card').count(),1);
   await page.locator('.tool-card').click(); await heading('Video to GIF');
   await page.getByRole('button',{name:'Trim',exact:true}).click();
   await page.getByRole('spinbutton',{name:'End (seconds)'}).fill('10');
+  await nav('YouTube Converter'); await heading('YouTube Converter');
+  await page.getByRole('textbox', { name: 'YouTube URLs' }).fill('https://youtu.be/test');
+  const format = page.getByRole('combobox', { name: 'Format', exact: true });
+  assert.equal(await format.locator('option').count(), 10);
+  await format.selectOption('mp4');
+  assert.equal(await page.getByRole('combobox', { name: 'Maximum resolution' }).locator('option').count(), 7);
+  await format.selectOption('gif');
+  await page.getByRole('combobox', { name: 'Maximum width' }).selectOption('960');
+  await format.selectOption('flac');
+  assert.equal(await page.getByRole('combobox', { name: 'Maximum resolution' }).count(), 0);
+  await page.screenshot({ path: '.tools/youtube-preview.png', fullPage: true });
+  await nav('Video to GIF'); await heading('Video to GIF');
   await nav('Image Converter'); await heading('Image Converter');
   await page.getByRole('slider',{name:'Resolution',exact:true}).fill('50');
   await page.getByRole('combobox',{name:'Format',exact:true}).selectOption('jpg');
@@ -80,5 +92,5 @@ try {
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>window.innerWidth),false);
   await page.screenshot({path:'.tools/compact-preview.png',fullPage:true});
   assert.deepEqual(errors,[]);
-  console.log('UI checks passed: all 14 tools, categories, search, mouse/keyboard history, presets, remembered options, and compact layout.');
+  console.log('UI checks passed: all 15 tools, categories, search, mouse/keyboard history, presets, remembered options, and compact layout.');
 } finally { await browser.close(); }

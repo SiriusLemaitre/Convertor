@@ -4,6 +4,10 @@ A local desktop toolbox built with Tauri, React, TypeScript, and Rust. Native FF
 
 ## Use
 
+Download the Windows installer from the [latest release](https://github.com/SiriusLemaitre/Convertor/releases/latest), run the setup executable, and launch Convertor from the Start menu. Processing engines are included. A portable ZIP is also available; extract the entire archive before launching Convertor.exe.
+
+**YouTube Converter:** open the YouTube section, paste HTTPS video links (one per line), choose an output folder and format, then download and convert. Audio exports: MP3, M4A, OGG, WAV, FLAC. Video exports: MP4, MKV, WebM, MOV, with best available or maximum 360p–2160p resolution, aspect ratio preservation, and no upscaling. GIF exports offer width and frame rate controls. Up to 50 links per batch; playlists are not expanded and live streams are excluded. Progress, cancellation, and output access use the job queue. YouTube requires internet access; source availability and service restrictions can prevent some downloads. WAV/FLAC cannot restore quality already lost in YouTube audio.
+
 On Windows, double-click `Start-Convertor.cmd`. If a portable build exists in `release/`, it opens directly. Otherwise the launcher uses the development setup.
 
 - **Video to MP3:** add one or more videos, select 128/192/320 kbps, and convert.
@@ -23,11 +27,11 @@ On Windows, double-click `Start-Convertor.cmd`. If a portable build exists in `r
 - **Job queue:** view progress, cancel queued/running jobs, preview completed files, or open the output folder.
 - **Settings:** choose light or dark appearance, automatic image previews, the default output folder, 1–4 simultaneous jobs, and optional custom engine executables. Appearance and preview preferences save automatically.
 
-Processing runs offline. Original inputs are never changed. Outputs are first written to a temporary file and committed without overwriting existing files; collisions receive numbered suffixes. Temporary files are removed on cancellation/failure. Closing the app cancels active work. Queue history lasts for the current session; preferences are saved in the OS application config directory.
+Local file processing runs offline. Original inputs are never changed. Outputs are first written to a temporary file and committed without overwriting existing files; collisions receive numbered suffixes. Temporary files are removed on cancellation/failure. Closing the app cancels active work. Queue history lasts for the current session; preferences are saved in the OS application config directory.
 
 PDF merging combines pages in order. It does not promise to preserve document-level bookmarks, signatures, attachments, or interactive form behavior. Password-protected inputs require an unprotected copy in this version.
 
-Tools are grouped into Documents, Images, Audio, Video, and Utilities. Filter by category or search by tool, description, or format. Trimming is also linked under Audio. Mouse side buttons, toolbar arrows, and Alt+Left/Right navigate through visited tools and pages. Navigation preserves each tool's selected files for the session.
+Tools are grouped into Documents, Images, Audio, Video, YouTube, and Utilities. Filter by category or search by tool, description, or format. Trimming is also linked under Audio. Mouse side buttons, toolbar arrows, and Alt+Left/Right navigate through visited tools and pages. Navigation preserves each tool's selected files for the session.
 
 Each tool remembers its options between launches and supports named presets. These are stored locally in the WebView profile. Reset options restores that tool's defaults; saved presets can be selected or deleted separately. Source players, image comparisons, PDF page previews, and video still previews help inspect inputs before export. Completed single-file jobs offer an output preview; multi-file exports offer an open-folder button.
 
@@ -79,6 +83,10 @@ After building the portable app, `node scripts/check-desktop.mjs` launches a tes
 4. Reuse the job queue, cancellation, progress, and safe output commit.
 
 ## Distribution
+
+`scripts/setup-engines.ps1` also bundles yt-dlp and Deno; use `scripts/setup-youtube.ps1` to refresh just those components. Downloads are checked against official SHA-256 manifests or release asset digests, and the resolved versions and license notices ship with the binaries. Run `node scripts/check-youtube.mjs` after building for a live YouTube-to-MP3/MP4 smoke check (requires internet).
+
+To publish a version, update the version in package.json, package-lock.json, src-tauri/Cargo.toml, src-tauri/Cargo.lock, and src-tauri/tauri.conf.json, edit RELEASE_NOTES.md, then push a matching `vX.Y.Z` tag. The Windows release workflow builds and publishes the installer, portable ZIP, and SHA-256 checksums. A manual workflow run builds downloadable artifacts without publishing a release. The public latest-download address is https://github.com/SiriusLemaitre/Convertor/releases/latest.
 
 Bundle the entire `release/` folder when sharing a portable build; the engines and DLLs are required. The NSIS installer bundles them automatically. Builds are unsigned.
 

@@ -29,3 +29,5 @@
 .viewer-canvas img{max-width:none;flex-shrink:0;object-fit:contain;background:repeating-conic-gradient(var(--subtle) 0% 25%,var(--surface) 0% 50%) 0 / 16px 16px}
 .viewer-hint{font-size:11px;color:var(--muted);padding:10px 16px;border-top:1px solid var(--border)}
 @media(max-width:600px){.image-viewer{width:calc(100vw - 16px);height:calc(100vh - 16px)}.viewer-toolbar{gap:6px;padding:10px}.viewer-toolbar>strong{width:100%}.viewer-zoom input{width:75px}}
+
+.youtube-source { padding: 24px; align-self: start; } .youtube-source textarea { width: 100%; resize: vertical; min-height: 180px; padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: transparent; color: inherit; font: inherit; }

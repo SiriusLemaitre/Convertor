@@ -11,6 +11,7 @@ try {
     }
     Copy-Item 'src-tauri/binaries' 'release' -Recurse -Force
     Copy-Item 'LICENSE','README.md' 'release' -Force
-    Copy-Item 'src-tauri/target/release/bundle/nsis/Convertor_0.1.0_x64-setup.exe' 'release/Convertor_0.1.0_x64-setup.exe' -Force
+    $version = (Get-Content -Raw 'src-tauri/tauri.conf.json' | ConvertFrom-Json).version
+    Copy-Item "src-tauri/target/release/bundle/nsis/Convertor_${version}_x64-setup.exe" "release/Convertor_${version}_x64-setup.exe" -Force
     Write-Output 'Portable app and installer are in release/.'
 } finally { Pop-Location }

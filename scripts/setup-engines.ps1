@@ -61,3 +61,4 @@ Copy-Item (Join-Path $PSScriptRoot 'THIRD-PARTY.txt') (Join-Path $licenseFolder 
 & (Join-Path $binaryFolder 'ffmpeg.exe') -version | Out-File (Join-Path $licenseFolder 'ffmpeg-build-info.txt') -Encoding utf8
 & (Join-Path $binaryFolder 'qpdf.exe') --version
 Write-Output 'FFmpeg, FFprobe, qpdf, Poppler, and license notices are ready.'
+& "$PSScriptRoot/setup-youtube.ps1"

@@ -1,0 +1,58 @@
+name: Windows release
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install dependencies
+        run: npm ci
+      - name: Download bundled engines
+        shell: pwsh
+        run: |
+          ./scripts/setup-engines.ps1
+      - name: Verify
+        shell: pwsh
+        run: |
+          npm test
+          if ($LASTEXITCODE -ne 0) { throw 'Frontend tests failed' }
+          cargo test --manifest-path src-tauri/Cargo.toml
+          if ($LASTEXITCODE -ne 0) { throw 'Native tests failed' }
+      - name: Build installer
+        shell: pwsh
+        run: ./scripts/build.ps1
+      - name: Package portable build and checksums
+        shell: pwsh
+        run: |
+          $version = (Get-Content -Raw package.json | ConvertFrom-Json).version
+          if ('${{ github.ref_type }}' -eq 'tag' -and '${{ github.ref_name }}' -ne "v$version") { throw 'Tag and app versions differ' }
+          ./scripts/package-release.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-release
+          path: release-assets/*
+      - name: Publish GitHub release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: |
+          gh release view '${{ github.ref_name }}' --json tagName 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload '${{ github.ref_name }}' release-assets/* --clobber
+            if ($LASTEXITCODE -ne 0) { throw 'Asset upload failed' }
+            gh release edit '${{ github.ref_name }}' --draft=false --latest --notes-file RELEASE_NOTES.md
+          } else {
+            gh release create '${{ github.ref_name }}' release-assets/* --verify-tag --latest --title 'Convertor ${{ github.ref_name }}' --notes-file RELEASE_NOTES.md
+          }
+          if ($LASTEXITCODE -ne 0) { throw 'Release publication failed' }

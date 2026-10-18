@@ -1,6 +1,7 @@
 node_modules/
 dist/
 release/
+release-assets/
 *.tsbuildinfo
 .tools/
 src-tauri/target/

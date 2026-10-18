@@ -27,6 +27,13 @@ Conda build recipes: https://github.com/conda-forge/poppler-feedstock
 Runtime dependencies are included as supplied by the Windows distributor.
 Poppler character maps and their notices are under poppler/share/poppler/.
 
+YouTube downloader: yt-dlp (Unlicense; bundled executable includes third-party
+components under their own licenses). See yt-dlp-LICENSE.txt and
+yt-dlp-THIRD-PARTY.txt. Project: https://github.com/yt-dlp/yt-dlp
+JavaScript runtime: Deno (MIT). See Deno-LICENSE.txt.
+Project and source: https://github.com/denoland/deno
+Exact bundled versions: see youtube-build-info.txt.
+
 Convertor application
 License: MIT; see the project's LICENSE file.
 Tauri: MIT or Apache-2.0. React: MIT. Lucide icons: ISC.

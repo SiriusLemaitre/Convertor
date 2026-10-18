@@ -207,7 +207,8 @@ impl Queue {
         for task in tasks {
             let created = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis() as u64;
             let id = format!("{created}-{}", SEQUENCE.fetch_add(1, Ordering::Relaxed));
-            let label = if task.request.kind == "pdf" { format!("{} documents → {}.pdf", task.request.inputs.len(), task.stem) }
+            let label = if task.request.kind == "youtube" { format!("{} → {}", task.stem, task.request.format.to_uppercase()) }
+                else if task.request.kind == "pdf" { format!("{} documents → {}.pdf", task.request.inputs.len(), task.stem) }
                 else { Path::new(&task.request.inputs[0]).file_name().unwrap_or_default().to_string_lossy().into() };
             let job = Job { id: id.clone(), kind: task.request.kind.clone(), label, status: "queued".into(), progress: 0.0, output: None, output_is_directory: false, error: None, created };
             added.push(job.clone());
@@ -367,7 +368,13 @@ pub fn media_args(request: &JobRequest, output: &Path, palette: Option<&Path>) -
     args
 }
 
-fn stop_child(child: &mut Child) { let _ = child.kill(); let _ = child.wait(); }
+fn stop_child(child: &mut Child) {
+    // Downloaders spawn FFmpeg and JavaScript runtimes which must stop as well.
+    #[cfg(windows)] {
+        let _ = command(Path::new("taskkill.exe")).args(["/PID", &child.id().to_string(), "/T", "/F"]).stdout(Stdio::null()).stderr(Stdio::null()).status();
+    }
+    let _ = child.kill(); let _ = child.wait();
+}
 
 pub fn image_args(request: &JobRequest, output: &Path) -> Vec<String> {
     let mut args = media_input_args(request);
@@ -480,6 +487,7 @@ fn video_args(request: &JobRequest, plan: &VideoEstimate, output: &Path) -> Vec<
 }
 
 pub fn run_task(task: &Task, cancelled: &AtomicBool, mut progress: impl FnMut(f64)) -> Result<PathBuf, String> {
+    if task.request.kind == "youtube" { return crate::youtube::run(task, cancelled, &mut progress); }
     if toolbox::is_tool(&task.request) { return toolbox::run(task, cancelled, progress); }
     if cancelled.load(Ordering::Relaxed) { return Err("Cancelled".into()); }
     let temporary = tempfile::Builder::new().prefix(".convertor-").suffix(".partial").tempfile_in(&task.folder).map_err(|e| format!("Cannot write to the output folder: {e}"))?.into_temp_path();
@@ -544,7 +552,7 @@ pub fn run_task(task: &Task, cancelled: &AtomicBool, mut progress: impl FnMut(f6
     commit_output(temporary, &task.folder, &task.stem, output_extension(request))
 }
 
-fn run_process(cmd: Command, cancelled: &AtomicBool, duration: f64, progress: impl FnMut(f64), allow_warnings: bool) -> Result<(), String> {
+pub(crate) fn run_process(cmd: Command, cancelled: &AtomicBool, duration: f64, progress: impl FnMut(f64), allow_warnings: bool) -> Result<(), String> {
     run_process_guarded(cmd, cancelled, duration, progress, allow_warnings, None)
 }
 

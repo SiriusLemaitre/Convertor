@@ -1,5 +1,6 @@
 ﻿import { AudioLines, Files, Film, Image, Music2, Scissors, FileImage, FileOutput, Scaling, Minimize2, ShieldCheck, Camera } from 'lucide-react';
 const videos = ['mp4', 'mov', 'mkv', 'webm', 'avi', 'm4v'];
+const videoAudioInputs = [...videos, 'wmv', 'asf', 'flv', 'f4v', 'mpeg', 'mpg', 'ts', 'mts', 'm2ts', 'vob', 'ogv', '3gp', '3g2', 'mxf'];
 const images = ['png', 'jpg', 'jpeg', 'webp', 'bmp', 'tif', 'tiff'];
 const audio = ['mp3', 'ogg', 'wav', 'flac', 'm4a', 'aac', 'opus', 'aiff', 'aif', 'wma'];
 export const videoAudioFormats = ['mp3', 'm4a', 'aac', 'ogg', 'opus', 'wav', 'flac', 'aiff', 'wma', 'ac3'];
@@ -8,7 +9,7 @@ export type Category = typeof categories[number];
 export const tools = [
   { id: 'youtube', name: 'YouTube Converter', short: 'YouTube', category: 'YouTube', icon: Film, extensions: ['mp3', 'm4a', 'ogg', 'wav', 'flac', 'mp4', 'mkv', 'webm', 'mov', 'gif'], color: 'coral', output: 'Audio or video', batch: true, description: 'Download YouTube links as audio, video, or GIF with resolution controls.' },
   { id: 'audio', name: 'Audio Converter', short: 'audio', category: 'Audio', icon: Music2, extensions: audio, color: 'violet', output: 'Audio', batch: true, description: 'Convert recordings between audio formats.' },
-  { id: 'mp3', name: 'Video to Audio', short: 'audio', category: 'Audio', icon: AudioLines, extensions: ['*'], color: 'violet', output: 'Audio', batch: true, description: 'Extract audio from any FFmpeg-supported video format.' },
+  { id: 'mp3', name: 'Video to Audio', short: 'audio', category: 'Audio', icon: AudioLines, extensions: ['*'], displayExtensions: videoAudioInputs, color: 'violet', output: 'Audio', batch: true, description: 'Extract soundtracks and choose an audio format.' },
   { id: 'pdf', name: 'Merge PDFs', short: 'PDF', category: 'Documents', icon: Files, extensions: ['pdf'], color: 'coral', output: 'PDF document', batch: false, description: 'Combine documents in your chosen order.' },
   { id: 'video', name: 'Video Converter', short: 'video', category: 'Video', icon: Film, extensions: videos, color: 'green', output: 'Video', batch: true, description: 'Convert videos, resolution, and frame rate.' },
   { id: 'gif', name: 'Video to GIF', short: 'GIF', category: 'Video', icon: Film, extensions: videos, color: 'green', output: 'Animated GIF', batch: true, description: 'Create looping GIFs from videos or clips.' },

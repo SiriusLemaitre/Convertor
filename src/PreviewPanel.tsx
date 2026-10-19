@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { convertFileSrc } from '@tauri-apps/api/core';
 import { Eye, LoaderCircle } from 'lucide-react';
-import { api, desktop, type JobRequest } from './api';
+import { api, desktop, fileSource, type JobRequest } from './api';
 import { fileName } from './tools';
 import ImageViewer from './ImageViewer';
 
@@ -42,7 +41,7 @@ export default function PreviewPanel({ request, onSelection, autoImagePreview = 
     finally { if (current.current === id) setLoading(false); }
   }
   if (!source) return null;
-  const src = desktop ? convertFileSrc(source) : '';
+  const src = desktop ? fileSource(source) : '';
   const isSelection = request.kind === 'trim' || request.kind === 'gif' && request.duration !== null;
   function timeUpdate() {
     const element = media.current; if (!element) return;

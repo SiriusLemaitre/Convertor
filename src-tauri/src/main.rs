@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 mod engine;
 mod youtube;
+mod web;
 use engine::{ImagePreview, Job, JobRequest, PreviewManager, Queue, Settings, Task};
 use serde::Serialize;
 use std::{fs, path::{Path, PathBuf}, sync::{Arc, Mutex}};
@@ -197,14 +198,24 @@ fn reveal_file(path: String) -> Result<(), String> {
     result.map(|_| ()).map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+fn open_browser(hosted: bool, app: tauri::AppHandle) -> Result<String, String> {
+    web::open(&app, hosted)
+}
+
 fn main() {
-    let app = tauri::Builder::default().setup(|app| {
+    let browser_mode = std::env::args().any(|arg| arg == "--web" || arg == "--web-hosted");
+    let hosted = std::env::args().any(|arg| arg == "--web-hosted");
+    let mut context = tauri::generate_context!();
+    if browser_mode { for window in &mut context.config_mut().app.windows { window.visible = false; } }
+    let app = tauri::Builder::default().setup(move |app| {
         let config = app.path().app_config_dir()?.join("settings.json");
         let mut settings: Settings = fs::read(&config).ok().and_then(|data| serde_json::from_slice(&data).ok()).unwrap_or_default();
         settings.concurrency = settings.concurrency.clamp(1, 4);
         app.manage(AppState { queue: Queue::new(settings.concurrency), preview: PreviewManager::new(), visual: PreviewManager::new(), settings: Mutex::new(settings), config, resources: app.path().resource_dir()? });
+        if browser_mode { web::open(app.handle(), hosted).map_err(std::io::Error::other)?; }
         Ok(())
-    }).invoke_handler(tauri::generate_handler![app_info, save_settings, pick_files, inspect_files, pick_folder, pick_executable, enqueue, list_jobs, cancel_job, clear_finished, open_file, reveal_file, preview_images, cancel_image_preview, estimate_videos, visual_preview, cancel_visual_preview])
-        .build(tauri::generate_context!()).expect("Could not start Convertor");
+    }).invoke_handler(tauri::generate_handler![app_info, save_settings, pick_files, inspect_files, pick_folder, pick_executable, enqueue, list_jobs, cancel_job, clear_finished, open_file, reveal_file, preview_images, cancel_image_preview, estimate_videos, visual_preview, cancel_visual_preview, open_browser])
+        .build(context).expect("Could not start Convertor");
     app.run(|app, event| { if let tauri::RunEvent::Exit = event { let state = app.state::<AppState>(); state.preview.shutdown(); state.visual.shutdown(); state.queue.shutdown(); } });
 }

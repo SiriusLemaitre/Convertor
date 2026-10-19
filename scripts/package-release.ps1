@@ -1,7 +1,8 @@
+param([string]$ReleaseDir = 'release')
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 $version = (Get-Content -Raw -LiteralPath (Join-Path $root 'package.json') | ConvertFrom-Json).version
-$release = Join-Path $root 'release'
+$release = Join-Path $root $ReleaseDir
 $assets = Join-Path $root 'release-assets'
 New-Item -ItemType Directory -Force -Path $assets | Out-Null
 $installerName = "Convertor_${version}_x64-setup.exe"

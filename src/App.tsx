@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { ArrowLeft, ArrowRight, ArrowUp, ArrowDown, Check, CheckCheck, ChevronRight, CircleHelp, File, Folder, FolderOpen, LayoutGrid, ListOrdered, LoaderCircle, Plus, Search, Settings2, Upload, X, Eye, Save } from 'lucide-react';
-import { api, desktop, type AppInfo, type InputFile, type Job, type Settings } from './api';
+import { api, desktop, nativeDesktop, type AppInfo, type InputFile, type Job, type Settings } from './api';
 import { acceptsFile, categories, fileName, formatBytes, tools, type Tool, type ToolId, type Category } from './tools';
 import { defaultPreferences, useStored, type Preferences } from './preferences';
 import ToolOptions, { requestFor, validOptions } from './ToolOptions';
 import PreviewPanel from './PreviewPanel';
 import YouTubePage from './YouTubePage';
+import BrowserConnection from './BrowserConnection';
 
 type Page = 'home' | 'queue' | 'settings' | ToolId;
 const message = (error: unknown) => error instanceof Error ? error.message : String(error);
@@ -57,6 +58,7 @@ export default function App() {
   const [category, setCategory] = useState<Category | 'All'>('All');
   const [search, setSearch] = useState('');
   const [info, setInfo] = useState<AppInfo | null>(null);
+  const [connectionError, setConnectionError] = useState('');
   const [jobs, setJobs] = useState<Job[]>([]);
   const [filesByTool, setFilesByTool] = useState<Partial<Record<ToolId, InputFile[]>>>({});
   const [outputDir, setOutputDir] = useState('');
@@ -72,10 +74,10 @@ export default function App() {
   useEffect(() => { if (!notice) return; const id = setTimeout(() => setNotice(null), 6500); return () => clearTimeout(id); }, [notice]);
   useEffect(() => {
     if (!desktop) return;
-    api.info().then(data => { setInfo(data); setSettingsDraft(data.settings); setOutputDir(data.settings.outputDir); }).catch(e => toast(message(e), true));
     let live = true;
-    const refresh = () => api.jobs().then(data => { if (live) setJobs(data); }).catch(() => {});
-    void refresh(); const id = setInterval(refresh, 500);
+    api.info().then(data => { if (live) { setInfo(data); setSettingsDraft(data.settings); setOutputDir(data.settings.outputDir); setConnectionError(''); } }).catch(e => { if (live) setConnectionError(message(e)); });
+    const refresh = () => api.jobs().then(data => { if (live) { setJobs(data); setConnectionError(''); } }).catch(e => { if (live && !nativeDesktop) setConnectionError(message(e)); });
+    void refresh(); const id = setInterval(refresh, nativeDesktop ? 500 : 1500);
     return () => { live = false; clearInterval(id); };
   }, [toast]);
   const addFiles = useCallback((incoming: InputFile[], id: ToolId) => {
@@ -85,7 +87,7 @@ export default function App() {
     setFilesByTool(current => ({ ...current, [id]: [...new Map([...(current[id] || []), ...accepted].map(f => [f.path,f])).values()] }));
   }, [toast]);
   useEffect(() => {
-    if (!desktop) return;
+    if (!nativeDesktop) return;
     const listener = getCurrentWindow().onDragDropEvent(event => {
       setDragging(event.payload.type === 'enter' || event.payload.type === 'over');
       if (event.payload.type !== 'drop') return;
@@ -99,7 +101,7 @@ export default function App() {
   useEffect(() => { setDragging(false); }, [page]);
   async function browse() {
     if (!tool) return;
-    if (!desktop) { toast('Launch the desktop app to add files.'); return; }
+    if (!desktop) { toast('Connect Convertor on this computer to add files.'); return; }
     try { addFiles(await api.files(tool.extensions), tool.id); } catch (e) { toast(message(e), true); }
   }
   async function chooseFolder(settings = false) {
@@ -126,8 +128,8 @@ export default function App() {
       <nav className="tool-nav" aria-label="Tools by category">{categories.map(c => <div className="nav-category" key={c}><button className="category-label" aria-label={`Browse ${c} tools`} onClick={() => { setCategory(c); setSearch(''); navigate('home'); }}>{c}<ChevronRight size={12} /></button>{tools.filter(t => t.category === c || c === 'Audio' && t.id === 'trim').map(t => <button key={t.id} className={`nav-item ${page === t.id ? 'selected' : ''}`} aria-current={page === t.id ? 'page' : undefined} onClick={() => navigate(t.id)}><t.icon size={17} /><span>{t.name}</span></button>)}</div>)}</nav>
       <div className="sidebar-bottom"><button className={`nav-item ${page === 'settings' ? 'selected' : ''}`} onClick={() => navigate('settings')}><Settings2 size={18} />Settings</button></div>
     </aside>
-    <div className="main-shell"><header className="topbar"><div className="history-controls"><button className="icon-button" aria-label="Go back" title="Back (Alt+Left or mouse side button)" disabled={!canBack} onClick={() => window.history.back()}><ArrowLeft size={18} /></button><button className="icon-button" aria-label="Go forward" title="Forward (Alt+Right or mouse side button)" disabled={!canForward} onClick={() => window.history.forward()}><ArrowRight size={18} /></button></div><span>{tool ? `${tool.category} / ${tool.name}` : page === 'home' ? 'Your file toolbox' : page === 'queue' ? 'Job queue' : 'Settings'}</span></header><main>
-      {!desktop && <div className="preview-banner"><CircleHelp size={17} />Desktop app required for file processing.</div>}
+    <div className="main-shell"><header className="topbar"><div className="history-controls"><button className="icon-button" aria-label="Go back" title="Back (Alt+Left or mouse side button)" disabled={!canBack} onClick={() => window.history.back()}><ArrowLeft size={18} /></button><button className="icon-button" aria-label="Go forward" title="Forward (Alt+Right or mouse side button)" disabled={!canForward} onClick={() => window.history.forward()}><ArrowRight size={18} /></button></div><span>{tool ? `${tool.category} / ${tool.name}` : page === 'home' ? 'Your file toolbox' : page === 'queue' ? 'Job queue' : 'Settings'}</span>{nativeDesktop && <div className="browser-launch"><button className="text-button" onClick={() => api.browser().catch(e => toast(message(e), true))}>Open in browser</button><button className="text-button" onClick={() => api.browser(true).catch(e => toast(message(e), true))}>Open hosted page</button></div>}</header><main>
+      <BrowserConnection connected={Boolean(info) && !connectionError} error={connectionError} />
       {page === 'home' && <>
         <div className="page-heading"><div><h1>Tools</h1><p className="page-description">Convert, edit, and prepare your files in one place.</p></div><label className="search-box"><Search size={17} /><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search tools or formats" aria-label="Find a tool" />{search && <button aria-label="Clear search" onClick={() => setSearch('')}><X size={14} /></button>}</label></div>
         <div className="category-tabs" role="group" aria-label="Filter by category">{(['All',...categories] as const).map(c => <button key={c} className={category === c ? 'active' : ''} aria-pressed={category === c} onClick={() => setCategory(c)}>{c}</button>)}</div>
@@ -169,7 +171,7 @@ function ToolPage({ tool, autoImagePreview, files, setFiles, info, dragging, bro
   return <>
     <div className="tool-page-heading"><span className={`tool-icon ${tool.color}`}><tool.icon size={28} /></span><div><h1>{tool.name}</h1><p className="page-description">{tool.description}</p></div></div>
     {desktop && info && !engineReady && <div className="engine-warning"><CircleHelp size={17} /><span>{missing.join(', ')} unavailable. Check processing engines in Settings.</span></div>}
-    <div className="converter-layout"><div className="source-column"><section className="panel files-panel"><div className="panel-heading"><h2>Source files</h2><span>{files.length ? `${files.length} · ${formatBytes(files.reduce((n,f) => n+f.size,0))}` : 'Start here'}</span></div><button className={`dropzone ${dragging ? 'dragging' : ''}`} onClick={browse}><Upload size={25} /><strong>{dragging ? 'Drop files' : `Add ${tool.id === 'pdf' || tool.id.startsWith('pdf-') ? 'PDFs' : ['image','image-edit','images-pdf'].includes(tool.id) ? 'images' : tool.id === 'audio' ? 'audio' : ['metadata','compress','trim'].includes(tool.id) ? 'files' : 'videos'}`}</strong><span>Drop files or click to browse</span><small>{('displayExtensions' in tool ? tool.displayExtensions : tool.extensions).join(', ').toUpperCase()}</small></button>{files.length > 0 && <><div className="file-list">{files.map((file,index) => <div className="file-row" key={file.path}><span className="file-symbol"><File size={18} /></span><div className="file-detail"><a className="file-link" href="#" title={`Open ${file.path}`} onClick={e => { e.preventDefault(); void api.open(file.path).catch(error => toast(message(error), true)); }}>{file.name}</a><span>{formatBytes(file.size)}</span></div>{reorder && <div className="reorder"><button aria-label={`Move ${file.name} up`} disabled={index === 0} onClick={() => move(index,-1)}><ArrowUp size={15} /></button><button aria-label={`Move ${file.name} down`} disabled={index === files.length-1} onClick={() => move(index,1)}><ArrowDown size={15} /></button></div>}<button className="icon-button" aria-label={`Reveal ${file.name} in file explorer`} title="Reveal in file explorer" onClick={() => void api.reveal(file.path).catch(error => toast(message(error), true))}><FolderOpen size={16} /></button><button className="icon-button" aria-label={`Remove ${file.name}`} onClick={() => setFiles(files.filter(f => f.path !== file.path))}><X size={16} /></button></div>)}</div><div className="file-actions"><button className="text-button" onClick={browse}><Plus size={15} />Add files</button><button className="text-button" onClick={() => setFiles([])}>Clear list</button></div></>}</section><PreviewPanel request={request} autoImagePreview={autoImagePreview} previewEnabled={engineReady && validOptions(tool.id,p)} onSelection={['trim','gif','frames'].includes(tool.id) ? (key,time) => setP(s => ({ ...s,[key]:Number(time.toFixed(2)) })) : undefined} /></div>
+    <div className="converter-layout"><div className="source-column"><section className="panel files-panel"><div className="panel-heading"><h2>Source files</h2><span>{files.length ? `${files.length} · ${formatBytes(files.reduce((n,f) => n+f.size,0))}` : 'Start here'}</span></div><button className={`dropzone ${dragging ? 'dragging' : ''}`} onClick={browse}><Upload size={25} /><strong>{dragging ? 'Drop files' : `Add ${tool.id === 'pdf' || tool.id.startsWith('pdf-') ? 'PDFs' : ['image','image-edit','images-pdf'].includes(tool.id) ? 'images' : tool.id === 'audio' ? 'audio' : ['metadata','compress','trim'].includes(tool.id) ? 'files' : 'videos'}`}</strong><span>{nativeDesktop ? 'Drop files or click to browse' : 'Choose files from this computer'}</span><small>{('displayExtensions' in tool ? tool.displayExtensions : tool.extensions).join(', ').toUpperCase()}</small></button>{files.length > 0 && <><div className="file-list">{files.map((file,index) => <div className="file-row" key={file.path}><span className="file-symbol"><File size={18} /></span><div className="file-detail"><a className="file-link" href="#" title={`Open ${file.path}`} onClick={e => { e.preventDefault(); void api.open(file.path).catch(error => toast(message(error), true)); }}>{file.name}</a><span>{formatBytes(file.size)}</span></div>{reorder && <div className="reorder"><button aria-label={`Move ${file.name} up`} disabled={index === 0} onClick={() => move(index,-1)}><ArrowUp size={15} /></button><button aria-label={`Move ${file.name} down`} disabled={index === files.length-1} onClick={() => move(index,1)}><ArrowDown size={15} /></button></div>}<button className="icon-button" aria-label={`Reveal ${file.name} in file explorer`} title="Reveal in file explorer" onClick={() => void api.reveal(file.path).catch(error => toast(message(error), true))}><FolderOpen size={16} /></button><button className="icon-button" aria-label={`Remove ${file.name}`} onClick={() => setFiles(files.filter(f => f.path !== file.path))}><X size={16} /></button></div>)}</div><div className="file-actions"><button className="text-button" onClick={browse}><Plus size={15} />Add files</button><button className="text-button" onClick={() => setFiles([])}>Clear list</button></div></>}</section><PreviewPanel request={request} autoImagePreview={autoImagePreview} previewEnabled={engineReady && validOptions(tool.id,p)} onSelection={['trim','gif','frames'].includes(tool.id) ? (key,time) => setP(s => ({ ...s,[key]:Number(time.toFixed(2)) })) : undefined} /></div>
     <section className="panel options-panel"><div className="panel-heading"><h2>Options & output</h2><button className="text-button" onClick={() => { setP(defaultPreferences); setSelectedPreset(''); }}>Reset options</button></div>
       <details className="preset-details"><summary>Saved presets{presets.length ? ` (${presets.length})` : ''}</summary>{presets.length > 0 && <div className="preset-row"><select aria-label="Saved preset" value={selectedPreset} onChange={e => { setSelectedPreset(e.target.value); const preset = presets.find(item => item.name === e.target.value); if (preset) setP(preset.value); }}><option value="">Choose a preset</option>{presets.map(item => <option key={item.name} value={item.name}>{item.name}</option>)}</select><button className="icon-button" disabled={!selectedPreset} aria-label="Delete selected preset" onClick={() => { setPresets(s => s.filter(item => item.name !== selectedPreset)); setSelectedPreset(''); }}><X size={16} /></button></div>}<div className="preset-row"><input aria-label="Preset name" placeholder="Name these settings" maxLength={50} value={presetName} onChange={e => setPresetName(e.target.value)} /><button className="secondary-button" disabled={!presetName.trim()} onClick={savePreset}><Save size={14} />Save</button></div></details>
       <ToolOptions kind={tool.id} files={files} enabled={engineReady} value={p} onChange={setP} />

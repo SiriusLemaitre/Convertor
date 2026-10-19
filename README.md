@@ -2,6 +2,20 @@
 
 A local desktop toolbox built with Tauri, React, TypeScript, and Rust. Native FFmpeg handles video-to-MP3 and video-to-GIF; native qpdf merges PDFs without rasterizing pages.
 
+## Web version
+
+Open [Convertor on the web](https://siriuslemaitre.github.io/Convertor/) from anywhere. GitHub Pages hosts the interface; file conversion runs on your own Windows computer through Convertor, with no cloud uploads.
+
+Install the latest Windows version, then choose **Open hosted page** in the desktop toolbar. The browser opens with a private pairing link and connects to that running instance. Allow local network access if the browser asks. Native Windows dialogs select input files, output folders, and processing engines. Browser playback supports seeking; the queue, previews, cancellation, and settings use the same engine as the desktop app. Drag-and-drop is available in the desktop window; use **Add files** in the browser.
+
+For offline browser use, choose **Open in browser** in the desktop toolbar. The app serves its bundled interface at a loopback address; internet access is needed only for YouTube downloads. Portable ZIP users can also run `Start-Web.cmd` (offline) or `Start-Web-Hosted.cmd` (GitHub Pages). Installed users can run `Convertor.exe --web` or `Convertor.exe --web-hosted`.
+
+Keep Convertor running while processing. **Disconnect** forgets the browser's pairing; **Quit Convertor** stops the application and cancels active jobs. Closing a browser tab does not stop the helper. Each app launch creates a new private pairing link; do not share it. Browser preferences and presets are stored per browser origin, separately from the desktop WebView profile.
+
+The helper binds exclusively to `127.0.0.1` on a random port. API requests require a random session token, validate Host and Origin, and allow only the published GitHub Pages origin, the local interface, and the local development origin. Pairing tokens are removed from the address bar and kept in session storage. Public visitors without a Windows helper can browse tools and options, but cannot run native conversions. GitHub Pages does not run server code or reach a different computer's files. Some browsers block public-to-loopback connections; use offline browser mode in that case.
+
+`.github/workflows/pages.yml` builds and deploys the web page whenever `main` changes. The repository's Pages publishing source must be **GitHub Actions**. Windows releases continue to use the separate release workflow.
+
 ## Use
 
 Download the Windows installer from the [latest release](https://github.com/SiriusLemaitre/Convertor/releases/latest), run the setup executable, and launch Convertor from the Start menu. Processing engines are included. A portable ZIP is also available; extract the entire archive before launching Convertor.exe.
@@ -53,7 +67,7 @@ npm run desktop
 If PowerShell blocks scripts, use the launcher or run a separate process with
 `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build.ps1`.
 
-`npm run dev` shows the interface in a browser. Native dialogs and processing require the desktop app; the browser view clearly labels this limitation.
+`npm run dev` shows the interface in a browser. To connect it to native processing, launch browser mode, then paste its browser link into **Connect using an existing browser link** in the development page. Run `npm run build` before compiling Rust so the offline frontend is embedded. `node scripts/check-web.mjs` verifies the local browser transport and real conversion workflow against a built portable app.
 
 Engines are found in bundled `binaries/`, beside the executable, or on PATH. Custom paths override discovery. FFprobe, when available beside FFmpeg, supplies duration for progress tracking. Put Windows binaries and any dependent DLLs in `src-tauri/binaries/`. These are excluded from source control; use `scripts/setup-engines.ps1` to fetch them.
 

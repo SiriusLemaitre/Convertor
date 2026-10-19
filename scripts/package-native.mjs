@@ -1,0 +1,14 @@
+import { mkdirSync, readdirSync, copyFileSync } from 'node:fs';
+import path from 'node:path';
+import { createRequire } from 'node:module';
+const require = createRequire(import.meta.url);
+const { version } = require('../package.json');
+const platform = process.env.PLATFORM;
+const formats = { 'windows-x64': ['nsis', '.exe'], 'macos-x64': ['dmg', '.dmg'], 'macos-arm64': ['dmg', '.dmg'], 'linux-x64': ['appimage', '.AppImage'] };
+if (!formats[platform]) throw Error(`Unknown platform: ${platform}`);
+const [folder, extension] = formats[platform];
+const source = path.join('src-tauri/target/release/bundle', folder);
+const files = readdirSync(source).filter(name => name.endsWith(extension));
+if (files.length !== 1) throw Error(`Expected one ${extension} package, found ${files.length}`);
+mkdirSync('release-assets', { recursive: true });
+copyFileSync(path.join(source, files[0]), `release-assets/Convertor_${version}_${platform}${extension}`);

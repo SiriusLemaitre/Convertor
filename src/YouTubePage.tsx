@@ -30,9 +30,9 @@ export default function YouTubePage({ info, outputDir, chooseFolder, onJobs, toa
       {['wav','flac'].includes(options.format) && <p className="option-hint">Lossless encoding preserves downloaded audio; it cannot restore quality lost in the source.</p>}
       {options.format === 'gif' && <>{select('Maximum width', 'width', [320,480,640,960,1280], ['320 px','480 px','640 px','960 px','1280 px'])}{select('Frame rate', 'fps', [10,15,24,30], ['10 fps','15 fps','24 fps','30 fps'])}</>}
       <p className="option-hint">Files are named after the video title. Duplicate names get a numbered suffix.</p>
-      <div className="field"><span>Output folder</span><button className="folder-picker" disabled={!desktop} onClick={chooseFolder}><Folder size={17} /><span>{outputDir || 'Choose a folder'}</span></button></div>
+      <div className="field"><span>Output folder</span><button className="folder-picker" disabled={!desktop} onClick={chooseFolder}><Folder size={17} /><span>{outputDir || info?.downloadsDir || 'Downloads'}</span></button></div>
       {desktop && missing.length > 0 && <p className="preview-error">Missing: {missing.join(', ')}. Reinstall the latest version of Convertor to restore the bundled engines.</p>}
-      <button className="primary-button" disabled={!desktop || busy || missing.length > 0 || !outputDir || !links.length || links.length > 50} onClick={() => void run()}>{busy && <LoaderCircle size={16} className="spin" />}Download & convert{links.length > 1 ? ` ${links.length} videos` : ''}</button>
+      <button className="primary-button" disabled={!desktop || busy || missing.length > 0 || !links.length || links.length > 50} onClick={() => void run()}>{busy && <LoaderCircle size={16} className="spin" />}Download & convert{links.length > 1 ? ` ${links.length} videos` : ''}</button>
     </section></div>
   </>;
 }

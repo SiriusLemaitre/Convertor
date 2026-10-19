@@ -366,7 +366,7 @@ mod tests {
     }
     fn engine(name: &str) -> PathBuf {
         let folder = PathBuf::from(std::env::var_os("CONVERTOR_ENGINE_DIR").expect("Set CONVERTOR_ENGINE_DIR"));
-        if name == "pdftoppm" { folder.join("poppler/Library/bin/pdftoppm.exe") }
+        if name == "pdftoppm" && cfg!(windows) { folder.join("poppler/Library/bin/pdftoppm.exe") }
         else { folder.join(if cfg!(windows) { format!("{name}.exe") } else { name.into() }) }
     }
     fn request(kind: &str, input: &Path) -> JobRequest {

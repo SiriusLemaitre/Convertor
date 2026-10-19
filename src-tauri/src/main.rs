@@ -7,10 +7,10 @@ use serde::Serialize;
 use std::{fs, path::{Path, PathBuf}, sync::{Arc, Mutex}};
 use tauri::Manager;
 
-struct AppState { queue: Arc<Queue>, preview: Arc<PreviewManager>, visual: Arc<PreviewManager>, settings: Mutex<Settings>, config: PathBuf, resources: PathBuf }
+struct AppState { queue: Arc<Queue>, preview: Arc<PreviewManager>, visual: Arc<PreviewManager>, settings: Mutex<Settings>, config: PathBuf, resources: PathBuf, downloads: PathBuf }
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-struct AppInfo { settings: Settings, engines: Vec<EngineInfo>, cpu_count: usize }
+struct AppInfo { settings: Settings, engines: Vec<EngineInfo>, cpu_count: usize, downloads_dir: String }
 #[derive(Serialize)]
 struct EngineInfo { name: String, path: Option<String>, version: Option<String> }
 #[derive(Serialize)]
@@ -27,7 +27,7 @@ fn find_engine(name: &str, custom: &str, resources: &Path) -> Option<PathBuf> {
     if let Some(path) = std::env::var_os("PATH") { folders.extend(std::env::split_paths(&path)); }
     folders.into_iter().map(|folder| folder.join(&executable)).find(|path| path.is_file())
 }
-fn info(settings: Settings, resources: &Path) -> AppInfo {
+fn info(settings: Settings, resources: &Path, downloads: &Path) -> AppInfo {
     let engines = [("FFmpeg", "ffmpeg", &settings.ffmpeg_path), ("qpdf", "qpdf", &settings.qpdf_path), ("PDF renderer", "pdftoppm", &settings.pdf_renderer_path), ("YouTube downloader", "yt-dlp", &String::new()), ("JavaScript runtime", "deno", &String::new())].into_iter().map(|(display, name, custom)| {
         let path = find_engine(name, custom, resources);
         let version = path.as_ref().and_then(|path| {
@@ -42,14 +42,15 @@ fn info(settings: Settings, resources: &Path) -> AppInfo {
         });
         EngineInfo { name: display.into(), path: if version.is_some() { path.map(|p| p.to_string_lossy().into()) } else { None }, version }
     }).collect();
-    AppInfo { settings, engines, cpu_count: std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1) }
+    AppInfo { settings, engines, cpu_count: std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1), downloads_dir: downloads.to_string_lossy().into() }
 }
 
 #[tauri::command]
 async fn app_info(state: tauri::State<'_, AppState>) -> Result<AppInfo, String> {
     let settings = state.settings.lock().unwrap().clone();
     let resources = state.resources.clone();
-    tauri::async_runtime::spawn_blocking(move || info(settings, &resources)).await.map_err(|e| e.to_string())
+    let downloads = state.downloads.clone();
+    tauri::async_runtime::spawn_blocking(move || info(settings, &resources, &downloads)).await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -69,7 +70,8 @@ async fn save_settings(settings: Settings, state: tauri::State<'_, AppState>) ->
     *state.settings.lock().unwrap() = settings.clone();
     state.queue.concurrency(settings.concurrency);
     let resources = state.resources.clone();
-    tauri::async_runtime::spawn_blocking(move || info(settings, &resources)).await.map_err(|e| e.to_string())
+    let downloads = state.downloads.clone();
+    tauri::async_runtime::spawn_blocking(move || info(settings, &resources, &downloads)).await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -100,6 +102,10 @@ async fn pick_executable() -> Option<String> {
 #[tauri::command]
 fn enqueue(mut request: JobRequest, state: tauri::State<'_, AppState>) -> Result<Vec<Job>, String> {
     if request.kind == "youtube" {
+        if request.output_dir.trim().is_empty() {
+            fs::create_dir_all(&state.downloads).map_err(|e| format!("Cannot create Downloads folder: {e}"))?;
+            request.output_dir = state.downloads.to_string_lossy().into();
+        }
         youtube::validate(&request)?;
         let settings = state.settings.lock().unwrap().clone();
         let ffmpeg = find_engine("ffmpeg", &settings.ffmpeg_path, &state.resources).ok_or("FFmpeg is unavailable.")?;
@@ -212,7 +218,8 @@ fn main() {
         let config = app.path().app_config_dir()?.join("settings.json");
         let mut settings: Settings = fs::read(&config).ok().and_then(|data| serde_json::from_slice(&data).ok()).unwrap_or_default();
         settings.concurrency = settings.concurrency.clamp(1, 4);
-        app.manage(AppState { queue: Queue::new(settings.concurrency), preview: PreviewManager::new(), visual: PreviewManager::new(), settings: Mutex::new(settings), config, resources: app.path().resource_dir()? });
+        let downloads = app.path().download_dir().or_else(|_| app.path().home_dir().map(|home| home.join("Downloads")))?;
+        app.manage(AppState { queue: Queue::new(settings.concurrency), preview: PreviewManager::new(), visual: PreviewManager::new(), settings: Mutex::new(settings), config, resources: app.path().resource_dir()?, downloads });
         if browser_mode { web::open(app.handle(), hosted).map_err(std::io::Error::other)?; }
         Ok(())
     }).invoke_handler(tauri::generate_handler![app_info, save_settings, pick_files, inspect_files, pick_folder, pick_executable, enqueue, list_jobs, cancel_job, clear_finished, open_file, reveal_file, preview_images, cancel_image_preview, estimate_videos, visual_preview, cancel_visual_preview, open_browser])

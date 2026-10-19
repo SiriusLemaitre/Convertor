@@ -26,7 +26,7 @@ export type Job = {
 };
 export type Settings = { outputDir: string; concurrency: number; ffmpegPath: string; qpdfPath: string; pdfRendererPath: string };
 export type EngineInfo = { name: string; path: string | null; version: string | null };
-export type AppInfo = { settings: Settings; engines: EngineInfo[]; cpuCount: number };
+export type AppInfo = { settings: Settings; engines: EngineInfo[]; cpuCount: number; downloadsDir?: string };
 export type JobRequest = {
   kind: ToolId; inputs: string[]; outputDir: string; outputName: string;
   bitrate: number; width: number; fps: number; start: number; duration: number | null;

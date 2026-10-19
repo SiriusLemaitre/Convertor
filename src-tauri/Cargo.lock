@@ -549,7 +549,7 @@ dependencies = [
 
 [[package]]
 name = "convertor"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "dunce",
  "getrandom 0.3.4",

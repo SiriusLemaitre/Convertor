@@ -3,7 +3,7 @@ $ErrorActionPreference = 'Stop'
 . "$PSScriptRoot/env.ps1"
 Push-Location (Split-Path -Parent $PSScriptRoot)
 try {
-    npm.cmd run package
+    npm.cmd run package -- --bundles nsis
     if ($LASTEXITCODE -ne 0) { throw 'Desktop build failed' }
     New-Item -ItemType Directory -Force -Path $ReleaseDir | Out-Null
     Copy-Item 'src-tauri/target/release/convertor.exe' (Join-Path $ReleaseDir 'Convertor.exe') -Force

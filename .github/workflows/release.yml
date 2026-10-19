@@ -1,4 +1,4 @@
-name: Windows release
+name: Desktop release
 on:
   push:
     tags: ['v*']
@@ -6,8 +6,24 @@ on:
 permissions:
   contents: write
 jobs:
-  windows:
-    runs-on: windows-latest
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: windows-x64
+            bundles: nsis
+          - os: macos-15-intel
+            platform: macos-x64
+            bundles: dmg
+          - os: macos-15
+            platform: macos-arm64
+            bundles: dmg
+          - os: ubuntu-22.04
+            platform: linux-x64
+            bundles: appimage
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -15,47 +31,76 @@ jobs:
           node-version: '22'
           cache: npm
       - uses: dtolnay/rust-toolchain@stable
-      - name: Install dependencies
-        run: npm ci
-      - name: Download bundled engines
-        shell: pwsh
+      - name: Check version
+        shell: bash
         run: |
-          ./scripts/setup-engines.ps1
-      - name: Verify
-        shell: pwsh
+          node -e 'const fs=require("fs"); const v=require("./package.json").version; if(process.env.GITHUB_REF_TYPE === "tag" && process.env.GITHUB_REF_NAME !== `v${v}`) throw Error("Tag/version mismatch"); if(JSON.parse(fs.readFileSync("src-tauri/tauri.conf.json")).version !== v) throw Error("Config/version mismatch")'
+      - name: Linux build dependencies
+        if: runner.os == 'Linux'
         run: |
-          npm test
-          if ($LASTEXITCODE -ne 0) { throw 'Frontend tests failed' }
-          npm run build
-          if ($LASTEXITCODE -ne 0) { throw 'Frontend build failed' }
-          $env:CONVERTOR_ENGINE_DIR = (Resolve-Path src-tauri/binaries).Path
-          cargo test --manifest-path src-tauri/Cargo.toml -- --include-ignored
-          if ($LASTEXITCODE -ne 0) { throw 'Native tests failed' }
-      - name: Build installer
-        shell: pwsh
-        run: ./scripts/build.ps1
-      - name: Package portable build and checksums
-        shell: pwsh
-        run: |
-          $version = (Get-Content -Raw package.json | ConvertFrom-Json).version
-          if ('${{ github.ref_type }}' -eq 'tag' -and '${{ github.ref_name }}' -ne "v$version") { throw 'Tag and app versions differ' }
-          ./scripts/package-release.ps1
-      - uses: actions/upload-artifact@v4
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev librsvg2-dev libayatana-appindicator3-dev patchelf ffmpeg poppler-utils libfuse2 gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-libav cmake ninja-build libjpeg-dev zlib1g-dev
+          curl -fL https://github.com/qpdf/qpdf/releases/download/v12.4.2/qpdf-12.4.2.tar.gz -o /tmp/qpdf.tar.gz
+          curl -fL https://github.com/qpdf/qpdf/releases/download/v12.4.2/qpdf-12.4.2.sha256 -o /tmp/qpdf.sha256
+          cd /tmp
+          grep ' qpdf-12.4.2.tar.gz$' qpdf.sha256 | sha256sum -c -
+          tar xf qpdf.tar.gz
+          cmake -S qpdf-12.4.2 -B qpdf-build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_DOC=OFF -DBUILD_TESTING=OFF
+          cmake --build qpdf-build --parallel 4
+          sudo cmake --install qpdf-build
+          sudo ldconfig
+      - name: macOS build dependencies
+        if: runner.os == 'macOS'
+        run: brew install ffmpeg qpdf poppler
+      - uses: denoland/setup-deno@v2
+        if: runner.os != 'Windows'
         with:
-          name: windows-release
-          path: release-assets/*
-      - name: Publish GitHub release
-        if: github.ref_type == 'tag'
+          deno-version: v2.x
+      - name: Bundle Unix engines and libraries
+        if: runner.os != 'Windows'
         env:
           GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/setup-engines-unix.py
+      - name: Bundle Windows engines
+        if: runner.os == 'Windows'
         shell: pwsh
+        run: ./scripts/setup-engines.ps1
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      - name: Native tests with bundled engines
+        shell: bash
+        run: CONVERTOR_ENGINE_DIR="$PWD/src-tauri/binaries" cargo test --manifest-path src-tauri/Cargo.toml -- --include-ignored
+      - name: Build native package
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: '1'
+          NO_STRIP: 'true'
+        run: npm run package -- --bundles ${{ matrix.bundles }}
+      - name: Stage assets
+        shell: bash
+        env:
+          PLATFORM: ${{ matrix.platform }}
+        run: node scripts/package-native.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.platform }}
+          path: release-assets/*
+          if-no-files-found: error
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.ref_type == 'tag'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+      - name: Publish complete release
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          gh release view '${{ github.ref_name }}' --json tagName 2>$null
-          if ($LASTEXITCODE -eq 0) {
-            gh release upload '${{ github.ref_name }}' release-assets/* --clobber
-            if ($LASTEXITCODE -ne 0) { throw 'Asset upload failed' }
-            gh release edit '${{ github.ref_name }}' --draft=false --latest --notes-file RELEASE_NOTES.md
-          } else {
-            gh release create '${{ github.ref_name }}' release-assets/* --verify-tag --latest --title 'Convertor ${{ github.ref_name }}' --notes-file RELEASE_NOTES.md
-          }
-          if ($LASTEXITCODE -ne 0) { throw 'Release publication failed' }
+          cd release-assets
+          sha256sum *.exe *.dmg *.AppImage > SHA256SUMS.txt
+          cd ..
+          gh release create "$GITHUB_REF_NAME" release-assets/* --verify-tag --latest --title "Convertor $GITHUB_REF_NAME" --notes-file RELEASE_NOTES.md

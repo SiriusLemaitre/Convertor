@@ -2,39 +2,23 @@
 
 Convert images, PDFs, audio, and video locally.
 
-## Features
+## Tools
 
-- Audio conversion
-- Video conversion
-- Image conversion
-- Video to audio
+- Audio Converter
+- Video Converter
+- Image Converter
+- Video to Audio
 - Video to GIF
-- PDF merging
-- PDF splitting, page extraction, and page removal
+- Merge PDFs
+- Split & extract PDFs
 - Images to PDF
 - PDF to images
-- Image resizing, cropping, and rotation
-- Audio and video trimming
-- Single-frame and interval video frame extraction
-- Image, audio, and video compression to a target size
-- Image, audio, video, and PDF metadata removal
-- YouTube to audio, video, and GIF (desktop)
-- Quality, bitrate, resolution, and frame rate controls
-- Batch processing
-- Drag-and-drop file selection
-- Tool search and category filters
-- Source and output previews
-- Image comparisons, zoom, and pan
-- Saved tool options and named presets
-- Job queue, progress tracking, and cancellation
-- Concurrent jobs (desktop)
-- Output folder selection (desktop)
-- File and folder opening (desktop)
-- Duplicate filename protection
-- Custom processing engine paths (desktop)
-- Light and dark themes
-- Local, offline file processing (desktop)
-- Browser-based file conversion
+- Resize, crop & rotate
+- Trim audio & video
+- Extract video frames
+- Compress to size
+- Remove metadata
+- YouTube Converter (desktop)
 
 ## Desktop
 

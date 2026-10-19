@@ -111,7 +111,7 @@ while index < len(pending):
 if MAC:
     # Re-sign modified Mach-O files, then Tauri signs the outer app.
     for dest in reversed(list(copied.values())):
-        subprocess.check_call(['codesign', '--force', '--sign', '-', str(dest)])
+        subprocess.check_call(['codesign', '--force', '--preserve-metadata=entitlements', '--sign', '-', str(dest)])
 else:
     # Each engine uses its own bundled loader, isolating it from AppImage's libs.
     loader = next(LIB.glob('ld-linux-*.so.*'))
@@ -155,3 +155,5 @@ with tempfile.TemporaryDirectory(prefix='convertor-bundle-') as temporary:
     for name, arg in [('ffmpeg', '-version'), ('ffprobe', '-version'), ('qpdf', '--version'),
                       ('pdftoppm', '-v'), ('pdfinfo', '-v'), ('yt-dlp', '--version'), ('deno', '--version')]:
         subprocess.run([str(relocated / name), arg], check=True, env={**os.environ, 'PATH': '/usr/bin:/bin'})
+    subprocess.run([str(relocated / 'deno'), 'eval', 'if (1 + 1 !== 2) throw new Error("JavaScript runtime failed")'],
+                   check=True, env={**os.environ, 'PATH': '/usr/bin:/bin'})

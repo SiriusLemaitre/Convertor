@@ -20,10 +20,9 @@ const app = spawn(binary, ['--web'], {
     WEBVIEW2_USER_DATA_FOLDER: path.join(folder, `profile-${Date.now()}`),
   },
 });
-let desktopBrowser, browser;
+let desktopBrowser;
 let appExit;
 app.on('exit', (code, signal) => { appExit = `${code ?? signal}`; });
-const errors = [];
 try {
   for (let i = 0; i < 60; i++) {
     try { desktopBrowser = await chromium.connectOverCDP(`http://127.0.0.1:${debugPort}`); break; }
@@ -72,47 +71,23 @@ try {
   const media = await fetch(`${endpoint}/media?${new URLSearchParams({ path: selectedVideo.path, token })}`, { headers: { Range: 'bytes=0-63' } });
   assert.equal(media.status, 206); assert.equal((await media.arrayBuffer()).byteLength, 64);
 
-  browser = await chromium.launch({ executablePath: process.env.BROWSER_PATH || 'C:\\Program Files\\BraveSoftware\\Brave-Browser\\Application\\brave.exe', headless: true });
-  const page = await browser.newPage({ viewport: { width: 1320, height: 950 } });
-  page.on('pageerror', e => errors.push(e.message));
-  // Only the modal file selection is supplied by the test; all other requests,
-  // preview rendering, queue submission, encoding and file serving are real.
-  await page.route('**/api/pick_files', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(selected) }));
-  await page.goto(link);
-  await page.getByText('Processing locally on this computer', { exact: true }).waitFor();
-  assert.equal(new URL(page.url()).hash, '', 'Pairing secret must leave the address bar');
-  assert.equal(await page.locator('.tool-card').count(), 15);
-  await page.locator('.sidebar').getByRole('button', { name: 'Image Converter', exact: true }).click();
-  await page.locator('.dropzone').click();
-  await page.locator('.file-row').waitFor();
-  await page.getByRole('combobox', { name: 'Format', exact: true }).selectOption('jpg');
-  await page.getByRole('slider', { name: 'Resolution', exact: true }).fill('50');
-  await page.waitForFunction(() => [...document.querySelectorAll('.comparison img')].length === 2 && [...document.querySelectorAll('.comparison img')].every(img => img.naturalWidth > 0));
-  await page.screenshot({ path: '.tools/web-image-converter.png', fullPage: true });
-  await page.getByRole('button', { name: 'Convert to JPG', exact: true }).click();
-  await page.locator('.job-status.completed').waitFor({ timeout: 30000 });
-  const completed = (await api('list_jobs')).find(job => job.status === 'completed');
-  assert.ok(completed.output.endsWith('.jpg')); assert.ok(statSync(completed.output).size > 0);
-  const dimensions = JSON.parse(execFileSync(path.resolve('src-tauri/binaries/ffprobe.exe'), ['-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=width,height', '-of', 'json', completed.output], { windowsHide: true }).toString());
-  assert.deepEqual(dimensions.streams[0], { width: 80, height: 60 });
-  await page.getByRole('button', { name: /^Preview / }).click();
-  await page.locator('.preview-modal img').waitFor();
-  await page.waitForFunction(() => document.querySelector('.preview-modal img')?.naturalWidth > 0);
-  await page.getByRole('button', { name: 'Close preview' }).click();
-  await page.screenshot({ path: '.tools/web-queue.png', fullPage: true });
-
-  const publicPage = await browser.newPage({ viewport: { width: 390, height: 844 } });
-  publicPage.on('pageerror', e => errors.push(e.message));
-  await publicPage.goto(endpoint);
-  await publicPage.getByRole('heading', { name: 'Your toolbox, in your browser.' }).waitFor();
-  assert.equal(await publicPage.locator('.browser-connected').count(), 0);
-  await publicPage.screenshot({ path: '.tools/web-mobile.png', fullPage: true });
-  assert.equal(await publicPage.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, 'Mobile page should fit the viewport');
-  assert.deepEqual(errors, []);
-  writeFileSync(path.join(folder, 'result.json'), JSON.stringify({ checks: ['API authentication', 'CORS/preflight', 'DNS rebinding', 'media authorization', 'range seeking', 'private pairing', 'image preview', 'real conversion', 'output preview', 'mobile layout'], output: completed.output }, null, 2));
-  console.log('Web checks passed: authentication, origin/host restrictions, streaming, pairing, previews, conversion, mobile layout.');
+  const response = await fetch(endpoint);
+  assert.equal(response.status,200);
+  assert.match(await response.text(),/<div id="root"><\/div>/);
+  const info = await api('app_info');
+  assert.ok(info.engines.every(engine => engine.path));
+  const [job] = await api('enqueue',{request:{kind:'image',inputs:[selected[0].path],outputDir:folder,outputName:'',bitrate:192,width:640,fps:15,start:0,duration:null,format:'jpg',imageScalePercent:50,imageQuality:80}});
+  let finished;
+  for (let attempt=0;attempt<100;attempt++) {
+    finished = (await api('list_jobs')).find(item=>item.id===job.id);
+    if (['completed','failed','cancelled'].includes(finished.status)) break;
+    await new Promise(resolve=>setTimeout(resolve,100));
+  }
+  assert.equal(finished.status,'completed',finished.error);
+  assert.ok(statSync(finished.output).size>0);
+  writeFileSync(path.join(folder,'result.json'),JSON.stringify({checks:['API authentication','CORS/preflight','DNS rebinding','media authorization','range seeking','native conversion'],output:finished.output},null,2));
+  console.log('Optional native browser transport checks passed. Test the standalone website with scripts/check-browser.mjs.');
 } finally {
-  if (browser) await browser.close();
   if (desktopBrowser) await desktopBrowser.close().catch(() => {});
   app.kill();
 }

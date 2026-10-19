@@ -8,3 +8,5 @@ src-tauri/target/
 src-tauri/binaries/*
 !src-tauri/binaries/.gitkeep
 *.log
+public/pdfjs/
+public/licenses/

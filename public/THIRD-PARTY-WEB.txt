@@ -1,0 +1,25 @@
+Convertor standalone browser libraries
+=====================================
+The Convertor application code is MIT licensed; see the repository LICENSE.
+Bundled dependencies retain their own licenses.
+
+@ffmpeg/ffmpeg 0.12.15: MIT.
+@ffmpeg/core 0.12.10: GPL-2.0-or-later, including FFmpeg and enabled codecs.
+Project, corresponding sources, codec dependencies, and WASM build recipes:
+https://github.com/ffmpegwasm/ffmpeg.wasm
+https://github.com/ffmpegwasm/ffmpeg.wasm/tree/main/packages/core
+https://github.com/ffmpegwasm/ffmpeg.wasm/tree/main/build
+https://github.com/ffmpegwasm/ffmpeg.wasm/tree/main/Dockerfile
+FFmpeg: https://ffmpeg.org/ and https://git.ffmpeg.org/ffmpeg.git
+The exact prebuilt engine is pinned in package-lock.json and available in:
+https://registry.npmjs.org/@ffmpeg/core/-/core-0.12.10.tgz
+GPL terms: https://www.gnu.org/licenses/old-licenses/gpl-2.0.html
+
+pdf-lib 1.17.1: MIT. Source: https://github.com/Hopding/pdf-lib/tree/v1.17.1
+PDF.js (pdfjs-dist) 6.4.299: Apache-2.0. Source: https://github.com/mozilla/pdf.js
+PDF.js character maps, fonts, ICC profiles, and image decoders include their
+own notices in the pdfjs/ resource directories.
+fflate 0.8.3: MIT. Source: https://github.com/101arrowz/fflate
+
+Dependency versions and integrity hashes are recorded in package-lock.json.
+Full license texts are copied to licenses/ during build preparation.

@@ -1,48 +1,23 @@
 import { invoke as nativeInvoke, isTauri, convertFileSrc } from '@tauri-apps/api/core';
 import type { ToolId } from './tools';
+import { browserSource, pickBrowserFiles } from './browserFiles';
 
 export const nativeDesktop = isTauri();
-const pairingPattern = /^(\d{1,5})\.([a-f0-9]{64})$/;
-function pairingFrom(value: string): string {
-  const match = pairingPattern.exec(value);
-  return match && Number(match[1]) > 0 && Number(match[1]) <= 65535 ? value : '';
+export const browserOnly = !nativeDesktop;
+// Processing is available in both the native shell and the standalone browser.
+export const desktop = true;
+if (!nativeDesktop && typeof window !== 'undefined') {
+  // Discard old helper pairing links; standalone processing never uses loopback.
+  if (window.location.hash.startsWith('#bridge=')) window.history.replaceState(null,'',window.location.pathname + window.location.search);
+  try { sessionStorage.removeItem('convertor.bridge'); } catch { /* Storage is optional. */ }
 }
-const fragment = new URLSearchParams(typeof window === 'undefined' ? '' : window.location.hash.slice(1));
-const incoming = pairingFrom(fragment.get('bridge') || '');
-if (incoming) {
-  sessionStorage.setItem('convertor.bridge', incoming);
-  window.history.replaceState(null, '', window.location.pathname + window.location.search);
-}
-const pairing = nativeDesktop || typeof sessionStorage === 'undefined' ? '' : pairingFrom(sessionStorage.getItem('convertor.bridge') || '');
-const [port, token] = pairing.split('.');
-const helper = `http://127.0.0.1:${port}`;
-// Existing tool panels use this flag to enable native processing in either shell.
-export const desktop = nativeDesktop || Boolean(pairing);
-export function connectHelper(link: string) {
-  let value = link.trim();
-  try { value = new URLSearchParams(new URL(value).hash.slice(1)).get('bridge') || ''; } catch { /* Accept a bare pairing code too. */ }
-  value = pairingFrom(value);
-  if (!value) throw new Error('Paste the browser link opened by Convertor on this computer.');
-  sessionStorage.setItem('convertor.bridge', value);
-  window.location.reload();
-}
-export function disconnectHelper() { sessionStorage.removeItem('convertor.bridge'); window.location.reload(); }
 export function fileSource(path: string) {
-  return nativeDesktop ? convertFileSrc(path) : pairing ? `${helper}/media?${new URLSearchParams({ path, token })}` : '';
+  return nativeDesktop ? convertFileSrc(path) : browserSource(path);
 }
 async function invoke<T = void>(command: string, args: Record<string, unknown> = {}): Promise<T> {
   if (nativeDesktop) return nativeInvoke<T>(command, args);
-  if (!pairing) throw new Error('Start Convertor in browser mode on this computer to process files.');
-  let response: Response;
-  try {
-    response = await fetch(`${helper}/api/${command}`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify(args), referrerPolicy: 'no-referrer',
-    });
-  } catch { throw new Error('Cannot reach Convertor. Start browser mode on this computer and allow local network access if your browser asks.'); }
-  const data = await response.json();
-  if (!response.ok) throw new Error(data.error || 'The local helper could not complete this request.');
-  return data as T;
+  const { browserInvoke } = await import('./browserEngine');
+  return await browserInvoke(command,args) as T;
 }
 export type InputFile = { path: string; name: string; size: number };
 export type Job = {
@@ -65,7 +40,7 @@ export const api = {
   browser: (hosted = false) => invoke<string>('open_browser', { hosted }),
   quit: () => invoke<void>('quit'),
   info: () => invoke<AppInfo>('app_info'),
-  files: (extensions: readonly string[]) => invoke<InputFile[]>('pick_files', { extensions }),
+  files: (extensions: readonly string[]) => nativeDesktop ? invoke<InputFile[]>('pick_files', { extensions }) : pickBrowserFiles(extensions),
   inspect: (paths: string[]) => invoke<InputFile[]>('inspect_files', { paths }),
   folder: () => invoke<string | null>('pick_folder'),
   executable: () => invoke<string | null>('pick_executable'),

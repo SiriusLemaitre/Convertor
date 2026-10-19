@@ -36,16 +36,7 @@ try {
   await page.getByRole('combobox', { name: 'Format', exact: true }).selectOption('mp3');
   await page.screenshot({ path: '.tools/video-audio-preview.png', fullPage: true });
   await nav('YouTube Converter'); await heading('YouTube Converter');
-  await page.getByRole('textbox', { name: 'YouTube URLs' }).fill('https://youtu.be/test');
-  const format = page.getByRole('combobox', { name: 'Format', exact: true });
-  assert.equal(await format.locator('option').count(), 10);
-  await format.selectOption('mp4');
-  assert.equal(await page.getByRole('combobox', { name: 'Maximum resolution' }).locator('option').count(), 7);
-  await format.selectOption('gif');
-  await page.getByRole('combobox', { name: 'Maximum width' }).selectOption('960');
-  await format.selectOption('flac');
-  assert.equal(await page.getByRole('combobox', { name: 'Maximum resolution' }).count(), 0);
-  await page.screenshot({ path: '.tools/youtube-preview.png', fullPage: true });
+  await page.getByText(/YouTube downloading is unavailable/).waitFor();
   await nav('Video to GIF'); await heading('Video to GIF');
   await nav('Image Converter'); await heading('Image Converter');
   await page.getByRole('slider',{name:'Resolution',exact:true}).fill('50');
@@ -92,7 +83,7 @@ try {
   assert.equal(await page.getByRole('checkbox', { name: 'Automatically preview image changes' }).isChecked(), false);
   await page.screenshot({ path: '.tools/dark-settings.png', fullPage: true });
   await page.getByRole('checkbox', { name: 'Automatically preview image changes' }).check();
-  assert.equal(await page.getByRole('button',{name:'Save settings'}).isDisabled(),true);
+  assert.equal(await page.getByRole('button',{name:'Save settings'}).count(),0);
   await page.setViewportSize({width:900,height:640});
   await nav('Resize, crop & rotate');
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>window.innerWidth),false);

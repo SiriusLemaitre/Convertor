@@ -108,7 +108,7 @@ fn serve(mut request: Request, bridge: &Bridge, app: &tauri::AppHandle) {
     if let Some((_, bytes)) = ASSETS.iter().find(|(path, _)| *path == name) {
         let mut response = Response::from_data(*bytes).with_header(Header::from_bytes("Content-Type", mime(Path::new(name))).unwrap());
         for h in headers(None) { response.add_header(h); }
-        response.add_header(Header::from_bytes("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; media-src 'self' blob:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'").unwrap());
+        response.add_header(Header::from_bytes("Content-Security-Policy", "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; media-src 'self' blob:; font-src 'self' data:; connect-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'").unwrap());
         let _ = request.respond(response);
     } else { reply(request, 404, json!({"error":"Not found"}), origin.as_deref()); }
 }

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Folder, LoaderCircle } from 'lucide-react';
-import { api, desktop, type AppInfo, type Job } from './api';
+import { api, desktop, nativeDesktop, type AppInfo, type Job } from './api';
 import { requestFor } from './ToolOptions';
 import { defaultPreferences, useStored } from './preferences';
 
@@ -19,6 +19,7 @@ export default function YouTubePage({ info, outputDir, chooseFolder, onJobs, toa
     try { onJobs(await api.enqueue({ ...requestFor('youtube', [], defaultPreferences, outputDir), inputs: links, outputName: 'YouTube', format: options.format, videoHeight: options.height, videoQuality: options.quality, bitrate: options.bitrate, width: options.width, fps: options.fps })); }
     catch (e) { toast(String(e), true); } finally { setBusy(false); }
   }
+  if (!nativeDesktop) return <section className="panel"><h1>YouTube Converter</h1><p className="page-description">YouTube downloading is unavailable on this standalone website because YouTube does not allow browser pages to fetch its media directly.</p><p className="page-description">To convert a video already on your device, choose Video Converter, Video to Audio, or Video to GIF in the sidebar. All other tools run here without installing anything.</p></section>;
   return <>
     <div className="page-heading"><div><h1>YouTube Converter</h1><p className="page-description">Save YouTube videos as audio, video, or animated GIFs.</p></div></div>
     <div className="converter-layout"><section className="panel youtube-source"><h2>Video links</h2><label className="field"><span>YouTube URLs · one video per line</span><textarea aria-label="YouTube URLs" rows={7} placeholder={'https://www.youtube.com/watch?v=…\nhttps://youtu.be/…'} value={urls} onChange={e => setUrls(e.target.value)} /></label><p className="option-hint">Watch, Shorts, and youtu.be links are supported. Up to 50 videos per batch; playlist links are not expanded.</p><p className="option-hint">Downloads require an internet connection. Track progress or cancel in the job queue.</p></section>

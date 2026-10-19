@@ -1,20 +1,22 @@
 # Convertor
 
-A local desktop toolbox built with Tauri, React, TypeScript, and Rust. Native FFmpeg handles video-to-MP3 and video-to-GIF; native qpdf merges PDFs without rasterizing pages.
+A private file toolbox for the browser and Windows. The standalone website processes files on your device using browser libraries and WebAssembly. The Windows app uses Tauri, React, TypeScript, and Rust with native FFmpeg and PDF engines.
 
 ## Web version
 
-Open [Convertor on the web](https://siriuslemaitre.github.io/Convertor/) from anywhere. GitHub Pages hosts the interface; file conversion runs on your own Windows computer through Convertor, with no cloud uploads.
+Open [Convertor on the web](https://siriuslemaitre.github.io/Convertor/) and start converting. **No desktop app, installation, local helper, account, or uploads are required.** Files are processed entirely on your device in the browser. GitHub Pages hosts the application and its bundled processing libraries.
 
-Install the latest Windows version, then choose **Open hosted page** in the desktop toolbar. The browser opens with a private pairing link and connects to that running instance. Allow local network access if the browser asks. Native Windows dialogs select input files, output folders, and processing engines. Browser playback supports seeking; the queue, previews, cancellation, and settings use the same engine as the desktop app. Drag-and-drop is available in the desktop window; use **Add files** in the browser.
+Choose a tool, add or drop files, change the options, and convert. Completed jobs have **Download** and preview buttons. Split PDFs, rendered PDF pages, and interval frame captures download as ZIP archives. Browser download settings choose the destination folder. Keep the tab open until results have been downloaded; source files, results, and queue history are held only for this tab's lifetime. Appearance and tool presets are stored locally per browser origin.
 
-For offline browser use, choose **Open in browser** in the desktop toolbar. The app serves its bundled interface at a loopback address; internet access is needed only for YouTube downloads. Portable ZIP users can also run `Start-Web.cmd` (offline) or `Start-Web-Hosted.cmd` (GitHub Pages). Installed users can run `Convertor.exe --web` or `Convertor.exe --web-hosted`.
+The 14 file tools support image conversion and editing; PDF merge, page selection/splitting, images to PDF, and PDF rasterization; audio and video conversion, soundtrack extraction, GIFs, trimming, frame extraction, compression to a size limit, and metadata removal. Images use canvas and FFmpeg WASM; PDFs use pdf-lib and PDF.js; media uses a single-thread WebAssembly build of FFmpeg. The browser loads the media engine (about 31 MB before transfer compression) only when needed. All assets come from this site; no third-party conversion service receives files. Loading the site and engine requires internet access; processing itself is local.
 
-Keep Convertor running while processing. **Disconnect** forgets the browser's pairing; **Quit Convertor** stops the application and cancels active jobs. Closing a browser tab does not stop the helper. Each app launch creates a new private pairing link; do not share it. Browser preferences and presets are stored per browser origin, separately from the desktop WebView profile.
+**Browser limits:** modern browsers with WebAssembly are required. Files are limited to 256 MB each and selections to 512 MB per batch; the tab also caps retained file data at 768 MB before accepting another selection. Jobs run sequentially to limit memory use. Rasterized images are limited to 40 million pixels and 16,384 pixels per side; PDF image exports allow 200 pages and interval captures allow 1,000 frames per job. Browser memory and codec availability can impose lower practical limits, especially on phones. Audio/video encoding is slower than the native Windows app. WebM exports use VP8/Vorbis in the browser, while the Windows app uses VP9/Opus. Each media operation releases its worker heap; downloaded engine assets can be reused from the browser cache. Compression validates the final output size and reports limits it cannot meet.
 
-The helper binds exclusively to `127.0.0.1` on a random port. API requests require a random session token, validate Host and Origin, and allow only the published GitHub Pages origin, the local interface, and the local development origin. Pairing tokens are removed from the address bar and kept in session storage. Public visitors without a Windows helper can browse tools and options, but cannot run native conversions. GitHub Pages does not run server code or reach a different computer's files. Some browsers block public-to-loopback connections; use offline browser mode in that case.
+**YouTube downloading is unavailable in the standalone website.** YouTube does not expose its media to arbitrary browser pages with the permissions a static site needs. Convert a video file already on your device instead. The separate Windows app retains its YouTube downloader and native processing capabilities.
 
-`.github/workflows/pages.yml` builds and deploys the web page whenever `main` changes. The repository's Pages publishing source must be **GitHub Actions**. Windows releases continue to use the separate release workflow.
+The public website never contacts a loopback helper or requests local network access. The Windows desktop app remains available separately. Older desktop releases also provide local browser launchers; those older bundled pages are distinct from the current standalone website.
+
+`.github/workflows/pages.yml` builds and deploys the website whenever `main` changes. The repository's Pages publishing source is **GitHub Actions**. Windows releases use a separate workflow. See [browser library notices](public/THIRD-PARTY-WEB.txt) for the bundled libraries and source links.
 
 ## Use
 
@@ -67,7 +69,7 @@ npm run desktop
 If PowerShell blocks scripts, use the launcher or run a separate process with
 `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build.ps1`.
 
-`npm run dev` shows the interface in a browser. To connect it to native processing, launch browser mode, then paste its browser link into **Connect using an existing browser link** in the development page. Run `npm run build` before compiling Rust so the offline frontend is embedded. `node scripts/check-web.mjs` verifies the local browser transport and real conversion workflow against a built portable app.
+`npm run dev` runs the standalone browser application. `npm run build` prepares PDF.js assets and produces the complete static site in `dist/`, including its WASM engine and workers. Run that build before compiling Rust to embed the latest local browser interface. `node scripts/check-browser.mjs` tests real browser-only exports against `npm run preview -- --port 4173`; set `SITE_URL` to test the hosted page. Its native fixture generators inspect outputs independently; the app under test never starts or contacts a desktop helper. `scripts/check-web.mjs` retains coverage of the older native browser transport.
 
 Engines are found in bundled `binaries/`, beside the executable, or on PATH. Custom paths override discovery. FFprobe, when available beside FFmpeg, supplies duration for progress tracking. Put Windows binaries and any dependent DLLs in `src-tauri/binaries/`. These are excluded from source control; use `scripts/setup-engines.ps1` to fetch them.
 

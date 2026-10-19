@@ -1,6 +1,40 @@
 # Convertor
 
-Convert images, PDFs, audio, and video locally. Includes batch processing, previews, presets, and a cancellable job queue. Original files are preserved; duplicate output names receive numbered suffixes.
+Convert images, PDFs, audio, and video locally.
+
+## Features
+
+- Audio conversion
+- Video conversion
+- Image conversion
+- Video to audio
+- Video to GIF
+- PDF merging
+- PDF splitting, page extraction, and page removal
+- Images to PDF
+- PDF to images
+- Image resizing, cropping, and rotation
+- Audio and video trimming
+- Single-frame and interval video frame extraction
+- Image, audio, and video compression to a target size
+- Image, audio, video, and PDF metadata removal
+- YouTube to audio, video, and GIF (desktop)
+- Quality, bitrate, resolution, and frame rate controls
+- Batch processing
+- Drag-and-drop file selection
+- Tool search and category filters
+- Source and output previews
+- Image comparisons, zoom, and pan
+- Saved tool options and named presets
+- Job queue, progress tracking, and cancellation
+- Concurrent jobs (desktop)
+- Output folder selection (desktop)
+- File and folder opening (desktop)
+- Duplicate filename protection
+- Custom processing engine paths (desktop)
+- Light and dark themes
+- Local, offline file processing (desktop)
+- Browser-based file conversion
 
 ## Desktop
 
@@ -14,9 +48,7 @@ Download your platform from [GitHub Releases](https://github.com/SiriusLemaitre/
 
 FFmpeg/FFprobe, qpdf, Poppler, yt-dlp, Deno, and their runtime libraries are bundled. No separate engine, Python, or package-manager installation is required. Desktop builds are unsigned; macOS may require approval in Privacy & Security on first launch.
 
-**YouTube Converter:** paste up to 50 HTTPS video links, choose audio, video, or GIF, and download. The default destination is your OS Downloads folder; a selected output folder takes precedence. Playlists are not expanded. Internet access is required, and YouTube restrictions may prevent downloads.
-
-Other tools convert/edit images; merge, split, and render PDFs; convert/trim media; extract audio or frames; compress to a size limit; and remove metadata. Settings control the output folder, concurrency, appearance, and optional engine overrides. Local conversions work offline.
+YouTube downloads default to your OS Downloads folder; a selected output folder takes precedence. Up to 50 HTTPS video links per batch; playlists are not expanded. Internet access is required, and YouTube restrictions may prevent downloads.
 
 ## Browser
 

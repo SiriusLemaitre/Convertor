@@ -84,6 +84,15 @@ while index < len(pending):
                 continue
             if dep.startswith('@loader_path/'):
                 resolved = source.parent / dep.removeprefix('@loader_path/')
+            elif dep.startswith('@rpath/'):
+                rpaths = re.findall(r'cmd LC_RPATH\s+cmdsize \d+\s+path (.*?) \(offset', run('otool', '-l', str(source)))
+                candidates = [source.parent / dep.removeprefix('@rpath/'), source.parent.parent / 'lib' / dep.removeprefix('@rpath/')]
+                for rpath in rpaths:
+                    rpath = rpath.replace('@loader_path', str(source.parent)).replace('@executable_path', str(source.parent))
+                    candidates.append(Path(rpath) / dep.removeprefix('@rpath/'))
+                resolved = next((p for p in candidates if p.is_file()), None)
+                if resolved is None:
+                    raise RuntimeError(f'Cannot resolve {dep} in {source}: {candidates}')
             elif dep.startswith('/'):
                 resolved = Path(dep)
             else:

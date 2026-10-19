@@ -40,11 +40,11 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev librsvg2-dev libayatana-appindicator3-dev patchelf ffmpeg poppler-utils libfuse2 gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-libav cmake ninja-build libjpeg-dev zlib1g-dev
-          curl -fL https://github.com/qpdf/qpdf/releases/download/v12.4.2/qpdf-12.4.2.tar.gz -o /tmp/qpdf.tar.gz
+          curl -fL https://github.com/qpdf/qpdf/releases/download/v12.4.2/qpdf-12.4.2.tar.gz -o /tmp/qpdf-12.4.2.tar.gz
           curl -fL https://github.com/qpdf/qpdf/releases/download/v12.4.2/qpdf-12.4.2.sha256 -o /tmp/qpdf.sha256
           cd /tmp
           grep ' qpdf-12.4.2.tar.gz$' qpdf.sha256 | sha256sum -c -
-          tar xf qpdf.tar.gz
+          tar xf qpdf-12.4.2.tar.gz
           cmake -S qpdf-12.4.2 -B qpdf-build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_DOC=OFF -DBUILD_TESTING=OFF
           cmake --build qpdf-build --parallel 4
           sudo cmake --install qpdf-build

@@ -72,11 +72,26 @@ pub struct JobRequest {
     #[serde(default)]
     pub crop_x: u32,
     #[serde(default)]
+    pub crop_rect: Option<CropRect>,
+    #[serde(default)]
     pub crop_y: u32,
     #[serde(default)]
     pub interval: f64,
     #[serde(default)]
     pub dpi: u32,
+}
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub struct CropRect { pub x: f64, pub y: f64, pub width: f64, pub height: f64 }
+impl CropRect {
+    pub fn valid(&self) -> bool {
+        [self.x,self.y,self.width,self.height].iter().all(|v| v.is_finite()) && self.x >= 0.0 && self.y >= 0.0 && self.width > 0.0 && self.height > 0.0 && self.x+self.width <= 1.00000001 && self.y+self.height <= 1.00000001
+    }
+    pub fn filter(&self, video: bool) -> Result<String, String> {
+        if !self.valid() { return Err("Choose a crop area inside the source.".into()); }
+        let w = if video { format!("max(2,trunc(iw*{}/2)*2)", self.width) } else { format!("max(1,round(iw*{}))", self.width) };
+        let h = if video { format!("max(2,trunc(ih*{}/2)*2)", self.height) } else { format!("max(1,round(ih*{}))", self.height) };
+        Ok(format!("crop=w='{w}':h='{h}':x='min(iw-ow,round(iw*{}))':y='min(ih-oh,round(ih*{}))':exact=1",self.x,self.y))
+    }
 }
 fn default_true() -> bool { true }
 fn default_quality() -> u32 { 80 }
@@ -662,7 +677,7 @@ mod tests {
         assert!(error.contains("stopped making progress"), "{error}");
         assert!(started.elapsed() < Duration::from_secs(10));
     }
-    fn request(kind: &str) -> JobRequest { JobRequest { kind: kind.into(), inputs: vec!["C:\\Videos\\clip with spaces.mp4".into()], output_dir: String::new(), output_name: "Merged document".into(), bitrate: 192, width: 640, fps: 15, start: 2.0, duration: Some(5.0), format: String::new(), image_width: 0, image_height: 0, keep_aspect: true, image_quality: 80, image_scale_percent: None, video_quality: 65, video_height: 0, video_fps: 0, pages: String::new(), operation: String::new(), target_mb: 10.0, rotation: 0, crop_ratio: String::new(), crop_x: 0, crop_y: 0, interval: 5.0, dpi: 150 } }
+    fn request(kind: &str) -> JobRequest { JobRequest { kind: kind.into(), inputs: vec!["C:\\Videos\\clip with spaces.mp4".into()], output_dir: String::new(), output_name: "Merged document".into(), bitrate: 192, width: 640, fps: 15, start: 2.0, duration: Some(5.0), format: String::new(), image_width: 0, image_height: 0, keep_aspect: true, image_quality: 80, image_scale_percent: None, video_quality: 65, video_height: 0, video_fps: 0, pages: String::new(), operation: String::new(), target_mb: 10.0, rotation: 0, crop_ratio: String::new(), crop_x: 0, crop_y: 0, crop_rect: None, interval: 5.0, dpi: 150 } }
     #[test]
     fn output_never_overwrites_existing_files() {
         let folder = tempfile::tempdir().unwrap();

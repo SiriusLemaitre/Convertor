@@ -1,4 +1,5 @@
 import type { Dispatch, SetStateAction } from 'react';
+import { validCrop } from './cropGeometry';
 import ImageOptions, { imageFields, validImageSettings } from './ImageOptions';
 import VideoOptions from './VideoOptions';
 import type { InputFile, JobRequest } from './api';
@@ -13,22 +14,22 @@ export function requestFor(kind: ToolId, files: InputFile[], p: Preferences, out
     ...(kind === 'gif' && !p.trim ? { start: 0 } : {}),
     pages: p.pages, operation: kind === 'frames' ? (p.operation === 'interval' ? 'interval' : 'single') : p.operation,
     targetMb: p.targetMb, imageWidth: p.imageWidth, imageHeight: p.imageHeight, keepAspect: p.keepAspect,
-    imageQuality: 90, rotation: p.rotation, cropX: p.cropX, cropY: p.cropY, cropRatio: kind === 'video-crop' ? p.cropRatio || '1:1' : p.cropRatio, interval: p.interval, dpi: p.dpi,
+    imageQuality: 90, rotation: p.rotation, cropRect: p.cropRect, cropX: p.cropX, cropY: p.cropY, cropRatio: kind === 'video-crop' ? p.cropRatio || '1:1' : p.cropRatio, interval: p.interval, dpi: p.dpi,
     ...(kind === 'image' ? imageFields(p.image) : kind === 'video' ? p.video : kind === 'audio' || kind === 'mp3' ? { format: p.audioFormat } : { format: p.format }),
   };
 }
 export function validOptions(kind: ToolId, p: Preferences) {
-  if (kind === 'video-crop') return ['', '1:1', '4:3', '3:2', '16:9', '9:16', 'custom'].includes(p.cropRatio) && (p.cropRatio !== 'custom' || [p.cropX, p.cropY, p.imageWidth, p.imageHeight].every(Number.isInteger) && p.cropX >= 0 && p.cropY >= 0 && p.imageWidth >= 2 && p.imageHeight >= 2 && p.imageWidth <= 16384 && p.imageHeight <= 16384);
+  if (kind === 'video-crop') return ['', '1:1', '4:3', '3:2', '16:9', '9:16', 'custom'].includes(p.cropRatio) && (p.cropRatio !== 'custom' || validCrop(p.cropRect) || [p.cropX, p.cropY, p.imageWidth, p.imageHeight].every(Number.isInteger) && p.cropX >= 0 && p.cropY >= 0 && p.imageWidth >= 2 && p.imageHeight >= 2 && p.imageWidth <= 16384 && p.imageHeight <= 16384);
   if (kind === 'image') return validImageSettings(p.image);
   if (kind === 'trim' || kind === 'gif' && p.trim) return p.start >= 0 && p.end > p.start;
   if (kind === 'pdf-pages') return p.operation === 'split' || /^\s*\d+(?:\s*-\s*\d+)?(?:\s*,\s*\d+(?:\s*-\s*\d+)?)*\s*$/.test(p.pages);
   if (kind === 'compress') return p.targetMb >= 0.01 && p.targetMb <= 10000;
   if (kind === 'frames') return p.start >= 0 && p.interval >= 0.1;
-  if (kind === 'image-edit') return p.imageWidth >= 0 && p.imageHeight >= 0 && (p.imageWidth === 0) === (p.imageHeight === 0);
+  if (kind === 'image-edit') return (p.cropRatio !== 'custom' || validCrop(p.cropRect)) && p.imageWidth >= 0 && p.imageHeight >= 0 && (p.imageWidth === 0) === (p.imageHeight === 0);
   return true;
 }
 export default function ToolOptions({ kind, files, enabled, value: p, onChange }: { kind: ToolId; files: InputFile[]; enabled: boolean; value: Preferences; onChange: Dispatch<SetStateAction<Preferences>> }) {
-  const set = <K extends keyof Preferences>(key: K, value: Preferences[K]) => onChange(s => ({ ...s, [key]: value }));
+  const set = <K extends keyof Preferences>(key: K, value: Preferences[K]) => onChange(s => ({ ...s, [key]: value, ...(['cropX','cropY','imageWidth','imageHeight'].includes(key) && kind === 'video-crop' ? {cropRect:null} : {}), ...(key === 'rotation' ? {cropRect:null,cropRatio:s.cropRatio === 'custom' ? '' : s.cropRatio} : {}) }));
   const number = (label: string, key: 'start' | 'end' | 'targetMb' | 'interval' | 'imageWidth' | 'imageHeight' | 'cropX' | 'cropY', min: number, step = 1) => <label className="field"><span>{label}</span><input type="number" min={min} step={step} value={p[key]} onChange={e => set(key, Number(e.target.value))} /></label>;
   const select = (label: string, key: 'format' | 'audioFormat' | 'rotation' | 'cropRatio' | 'dpi' | 'width' | 'fps', options: [string | number, string][]) => <label className="field"><span>{label}</span><div className="select-wrap"><select value={p[key]} onChange={e => set(key, (typeof p[key] === 'number' ? Number(e.target.value) : e.target.value) as never)}>{options.map(([v, name]) => <option key={v} value={v}>{name}</option>)}</select></div></label>;
   return <>
@@ -46,8 +47,8 @@ export default function ToolOptions({ kind, files, enabled, value: p, onChange }
     {kind === 'pdf-md' && <p className="option-hint">Exports selectable text with page headings and paragraphs to .md. Images, tables, and original formatting are not preserved. Scanned PDFs need OCR first.</p>}
     {kind === 'video-crop' && <>
       {select('Crop area', 'cropRatio', [...['1:1','4:3','3:2','16:9','9:16'].map(r => [r,r] as [string,string]), ['custom','Custom rectangle']])}
-      {p.cropRatio === 'custom' && <><div className="field-pair">{number('Left (px)', 'cropX', 0)}{number('Top (px)', 'cropY', 0)}</div><div className="field-pair">{number('Width (px)', 'imageWidth', 2)}{number('Height (px)', 'imageHeight', 2)}</div></>}
-      <p className="option-hint">Aspect ratios crop the center. Custom coordinates start at the top left of the displayed video and must fit inside every source. Exports MP4 with audio; dimensions round down to even pixels. Preview frame shows the crop.</p>
+      {p.cropRatio === 'custom' && <details className="crop-advanced"><summary>Enter pixel coordinates</summary><div className="field-pair">{number('Left (px)', 'cropX', 0)}{number('Top (px)', 'cropY', 0)}</div><div className="field-pair">{number('Width (px)', 'imageWidth', 2)}{number('Height (px)', 'imageHeight', 2)}</div></details>}
+      <p className="option-hint">Drag the box in the preview to choose your crop. Aspect-ratio presets start in the center. Exports MP4 with audio; dimensions round down to even pixels.</p>
     </>}
     {kind === 'pdf-images' && <div className="field-pair">{select('Format', 'format', [['png','PNG'],['jpg','JPG']])}{select('Resolution', 'dpi', [72,150,200,300].map(n => [n, `${n} DPI`]))}</div>}
     {kind === 'compress' && <>{number('Maximum size per file (MB)', 'targetMb', .01, .1)}<div className="segmented size-presets">{[1,5,10,25].map(n => <button key={n} className={p.targetMb === n ? 'active' : ''} onClick={() => set('targetMb', n)}>{n} MB</button>)}</div><p className="option-hint">Images export as JPG, audio as MP3, and videos as MP4. Quality and image resolution may decrease to fit. Each output is checked against the limit.</p></>}
@@ -56,7 +57,7 @@ export default function ToolOptions({ kind, files, enabled, value: p, onChange }
       <div className="field-pair">{number('Width (px)', 'imageWidth', 0)}{number('Height (px)', 'imageHeight', 0)}</div>
       <p className="option-hint">Set both to 0 to keep the size after cropping. Dimensions apply after rotation and cropping.</p>
       <label className="checkbox-field"><input type="checkbox" checked={p.keepAspect} onChange={e => set('keepAspect', e.target.checked)} />Fit within dimensions; keep aspect ratio</label>
-      {select('Center crop', 'cropRatio', [['','No crop'],...['1:1','4:3','3:2','16:9','9:16'].map(r => [r,r] as [string,string])])}
+      {select('Crop area', 'cropRatio', [['','No crop'],['custom','Custom rectangle'],...['1:1','4:3','3:2','16:9','9:16'].map(r => [r,r] as [string,string])])}
       {select('Rotate clockwise', 'rotation', [0,90,180,270].map(n => [n, `${n}°`]))}
     </>}
     {kind === 'frames' && <><div className="field"><span>Capture</span><div className="segmented"><button className={p.operation !== 'interval' ? 'active' : ''} onClick={() => set('operation','single')}>Single frame</button><button className={p.operation === 'interval' ? 'active' : ''} onClick={() => set('operation','interval')}>At intervals</button></div></div>{number('Start / timestamp (seconds)', 'start', 0, .1)}{p.operation === 'interval' && number('Every (seconds)', 'interval', .1, .1)}{select('Format', 'format', [['png','PNG'],['jpg','JPG']])}<p className="option-hint">Interval captures are saved together in a new folder.</p></>}

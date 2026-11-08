@@ -206,7 +206,7 @@ try {
   await navigate('Resize, crop & rotate'); await drop([image]);
   await page.getByRole('spinbutton', { name: 'Width (px)' }).fill('80');
   await page.getByRole('spinbutton', { name: 'Height (px)' }).fill('80');
-  await page.getByRole('combobox', { name: 'Center crop' }).selectOption('1:1');
+  await page.getByRole('combobox', { name: 'Crop area' }).selectOption('1:1');
   await page.getByRole('combobox', { name: 'Rotate clockwise' }).selectOption('90');
   await page.getByRole('img', { name: 'Output preview', exact: true }).waitFor();
   await page.waitForFunction(() => [...document.querySelectorAll('.comparison img')].every(img => img.naturalWidth > 0));

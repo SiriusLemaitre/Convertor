@@ -1,4 +1,5 @@
 import { invoke as nativeInvoke, isTauri, convertFileSrc } from '@tauri-apps/api/core';
+import type { CropRect } from './cropGeometry';
 import type { ToolId } from './tools';
 import { browserSource, pickBrowserFiles } from './browserFiles';
 
@@ -32,7 +33,7 @@ export type JobRequest = {
   bitrate: number; width: number; fps: number; start: number; duration: number | null;
   format?: string; imageWidth?: number; imageHeight?: number; keepAspect?: boolean; imageQuality?: number; imageScalePercent?: number;
   videoQuality?: number; videoHeight?: number; videoFps?: number;
-  cropX?: number; cropY?: number; pages?: string; operation?: string; targetMb?: number; rotation?: number; cropRatio?: string; interval?: number; dpi?: number;
+  cropRect?: CropRect | null; cropX?: number; cropY?: number; pages?: string; operation?: string; targetMb?: number; rotation?: number; cropRatio?: string; interval?: number; dpi?: number;
 };
 export type VideoEstimate = { path: string; size: number; width: number; height: number; fps: number; bitrate: number };
 export type ImagePreview = { path: string; size: number; width: number; height: number; sourceWidth: number; sourceHeight: number };

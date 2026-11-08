@@ -6,6 +6,7 @@ fn is_image(input: &str) -> bool { IMAGE_INPUTS.contains(&ext(input).as_str()) }
 fn is_audio(input: &str) -> bool { AUDIO_INPUTS.contains(&ext(input).as_str()) }
 fn crop_filter(r: &JobRequest) -> Result<String, String> {
     if r.crop_ratio == "custom" {
+        if let Some(rect) = &r.crop_rect { return rect.filter(true); }
         if r.image_width < 2 || r.image_height < 2 || r.image_width > 16384 || r.image_height > 16384 || r.crop_x > 32768 || r.crop_y > 32768 {
             return Err("Enter a valid crop rectangle, with dimensions from 2 to 16,384 pixels.".into());
         }
@@ -100,7 +101,8 @@ pub fn validate_tool(r: &JobRequest) -> Result<(), String> {
         "frames" => if !["png", "jpg"].contains(&r.format.as_str()) || !r.start.is_finite() || r.start < 0.0 || !["single", "interval"].contains(&r.operation.as_str()) || !r.interval.is_finite() || r.interval < 0.1 { return Err("Choose a valid timestamp or interval of at least 0.1 seconds.".into()); },
         "compress" => if !r.target_mb.is_finite() || !(0.01..=10000.0).contains(&r.target_mb) { return Err("Target size must be between 0.01 and 10,000 MB.".into()); },
         "image-edit" => {
-            if !IMAGE_FORMATS.contains(&r.format.as_str()) || ![0, 90, 180, 270].contains(&r.rotation) || !["", "1:1", "4:3", "3:2", "16:9", "9:16"].contains(&r.crop_ratio.as_str()) { return Err("Invalid image format, rotation, or crop.".into()); }
+            if r.crop_ratio == "custom" && r.crop_rect.as_ref().is_none_or(|c| !c.valid()) { return Err("Choose a crop area in the preview.".into()); }
+            if !IMAGE_FORMATS.contains(&r.format.as_str()) || ![0, 90, 180, 270].contains(&r.rotation) || !["", "custom", "1:1", "4:3", "3:2", "16:9", "9:16"].contains(&r.crop_ratio.as_str()) { return Err("Invalid image format, rotation, or crop.".into()); }
             if (r.image_width == 0) != (r.image_height == 0) || r.image_width > 16384 || r.image_height > 16384 || u64::from(r.image_width) * u64::from(r.image_height) > 100_000_000 || !(1..=100).contains(&r.image_quality) { return Err("Set both dimensions, up to 16,384 pixels per side and 100 megapixels total.".into()); }
         }
         _ => {}
@@ -132,7 +134,9 @@ pub fn edit_args(r: &JobRequest, output: &Path) -> Vec<String> {
     let mut args = image_args(&copy, output);
     let mut filters = vec![];
     match r.rotation { 90 => filters.push("transpose=1".into()), 180 => filters.push("hflip,vflip".into()), 270 => filters.push("transpose=2".into()), _ => {} }
-    if let Some((a, b)) = r.crop_ratio.split_once(':') {
+    if r.crop_ratio == "custom" {
+        if let Some(rect) = &r.crop_rect { if let Ok(filter) = rect.filter(false) { filters.push(filter); } }
+    } else if let Some((a, b)) = r.crop_ratio.split_once(':') {
         filters.push(format!("crop=w='min(iw,ih*{a}/{b})':h='min(ih,iw*{b}/{a})':x='(iw-ow)/2':y='(ih-oh)/2'"));
     }
     if r.image_width > 0 {
@@ -414,6 +418,15 @@ pub fn visual_preview(r: &JobRequest, engine: &Path, cancelled: &AtomicBool) -> 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn normalized_crops_validate_bounds_and_preserve_image_precision() {
+        let c = CropRect { x:0.25, y:0.125, width:0.5, height:0.75 };
+        assert!(c.filter(false).unwrap().contains("max(1,round(iw*0.5))"));
+        assert!(c.filter(true).unwrap().contains("max(2,trunc(iw*0.5/2)*2)"));
+        for bad in [CropRect { x:-0.1,..c.clone() }, CropRect { width:0.9,..c.clone() }, CropRect { height:f64::NAN,..c.clone() }, CropRect { width:0.0,..c.clone() }] {
+            assert!(bad.filter(false).is_err());
+        }
+    }
     #[test]
     fn markdown_preserves_paragraphs_pages_and_literal_characters() {
         let md = text_markdown("Café *literal*\nwrapped\n\nNext paragraph\n\x0c\x0cLast page\x0c").unwrap();

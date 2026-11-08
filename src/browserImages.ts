@@ -1,3 +1,4 @@
+import { validCrop } from './cropGeometry';
 import type { JobRequest } from './api';
 import { fileBlob } from './browserFiles';
 import { withMedia, readBytes, mediaMime, checkCancelled } from './browserMedia';
@@ -32,11 +33,18 @@ export async function imageCanvas(path: string, request: Partial<JobRequest> = {
     context.translate(rotated.width / 2, rotated.height / 2); context.rotate(rotation * Math.PI / 180);
     context.drawImage(image, -sourceWidth / 2, -sourceHeight / 2);
     let cropWidth = rotated.width, cropHeight = rotated.height;
-    if (request.cropRatio) {
+    let cropX = 0, cropY = 0;
+    if (request.cropRatio === 'custom') {
+      if (!validCrop(request.cropRect)) throw new Error('Choose a crop area in the preview.');
+      const c = request.cropRect;
+      cropWidth = Math.max(1,Math.round(rotated.width*c.width)); cropHeight = Math.max(1,Math.round(rotated.height*c.height));
+      cropX = Math.min(rotated.width-cropWidth,Math.round(rotated.width*c.x)); cropY = Math.min(rotated.height-cropHeight,Math.round(rotated.height*c.y));
+    } else if (request.cropRatio) {
       const [a,b] = request.cropRatio.split(':').map(Number);
       if (!(a > 0 && b > 0)) throw new Error('Choose a valid crop ratio.');
       if (cropWidth / cropHeight > a / b) cropWidth = cropHeight * a / b; else cropHeight = cropWidth * b / a;
     }
+    if (request.cropRatio !== 'custom') { cropX = (rotated.width-cropWidth)/2; cropY = (rotated.height-cropHeight)/2; }
     let width = cropWidth, height = cropHeight;
     if (request.kind === 'image') {
       const scale = request.imageScalePercent ?? 100;
@@ -48,7 +56,7 @@ export async function imageCanvas(path: string, request: Partial<JobRequest> = {
     }
     const canvas = canvasFor(width, height); const target = canvas.getContext('2d')!;
     if (request.format === 'jpg') { target.fillStyle = '#fff'; target.fillRect(0,0,canvas.width,canvas.height); }
-    target.drawImage(rotated, (rotated.width - cropWidth) / 2, (rotated.height - cropHeight) / 2, cropWidth,cropHeight,0,0,canvas.width,canvas.height);
+    target.drawImage(rotated, cropX, cropY, cropWidth,cropHeight,0,0,canvas.width,canvas.height);
     checkCancelled(signal);
     return { canvas, sourceWidth, sourceHeight };
   } finally { image.close(); }

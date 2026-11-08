@@ -62,7 +62,7 @@ try {
   await nav('Resize, crop & rotate'); await heading('Resize, crop & rotate');
   await page.getByRole('spinbutton',{name:'Width (px)'}).fill('800');
   await page.getByRole('spinbutton',{name:'Height (px)'}).fill('600');
-  await page.getByRole('combobox',{name:'Center crop'}).selectOption('4:3');
+  await page.getByRole('combobox',{name:'Crop area'}).selectOption('4:3');
   await page.getByRole('combobox',{name:'Rotate clockwise'}).selectOption('90');
   await page.screenshot({path:'.tools/image-edit-preview.png',fullPage:true});
   for (const name of ['PDF to Markdown','Crop video','Split & extract PDFs','Images to PDF','PDF to images','Trim audio & video','Extract video frames','Remove metadata','Video Converter','Audio Converter']) { await nav(name); await heading(name); assert.equal(await page.locator('.convert-button').isDisabled(),true); }

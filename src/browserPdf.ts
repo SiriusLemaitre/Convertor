@@ -1,4 +1,5 @@
 import { PDFDocument, PDFName } from 'pdf-lib';
+import { markdownPages } from './pdfMarkdown';
 import * as pdfjs from 'pdfjs-dist';
 import workerURL from 'pdfjs-dist/build/pdf.worker.mjs?url';
 import { zipSync } from 'fflate';
@@ -53,6 +54,30 @@ export async function archiveFiles(files: {name:string;blob:Blob}[], name: strin
   return { name, blob:new Blob([zipSync(entries,{level:0})],{type:'application/zip'}), archive:true };
 }
 export async function convertPdf(request: JobRequest, signal?: AbortSignal, progress?: (n:number) => void): Promise<BrowserOutput> {
+  if (request.kind === 'pdf-md') {
+    checkCancelled(signal);
+    const base = new URL(`${import.meta.env.BASE_URL}pdfjs/`, window.location.href).href;
+    const task = pdfjs.getDocument({data:new Uint8Array(await fileBlob(request.inputs[0]).arrayBuffer()), cMapUrl:base+'cmaps/', cMapPacked:true, standardFontDataUrl:base+'standard_fonts/', wasmUrl:base+'wasm/'});
+    const abort = () => { void task.destroy(); }; signal?.addEventListener('abort',abort,{once:true});
+    try {
+      checkCancelled(signal);
+      const document = await task.promise; const pages: string[] = [];
+      for (let n=1; n<=document.numPages; n++) {
+        checkCancelled(signal);
+        const page = await document.getPage(n); const content = await page.getTextContent();
+        let text = '', lastY: number | undefined, lastHeight = 0;
+        for (const item of content.items) {
+          if (!('str' in item)) continue;
+          const y = item.transform[5];
+          if (lastY !== undefined && Math.abs(y-lastY) > Math.max(lastHeight,item.height)*1.6) text += '\n\n';
+          text += item.str + (item.hasEOL ? '\n' : ' '); lastY = y; lastHeight = item.height;
+        }
+        pages.push(text); page.cleanup(); progress?.(n/document.numPages*95);
+      }
+      checkCancelled(signal);
+      return {name:request.inputs[0].split(/[\\/]/).pop()!.replace(/\.pdf$/i,'')+'.md',blob:new Blob([markdownPages(pages)],{type:'text/markdown;charset=utf-8'})};
+    } finally { signal?.removeEventListener('abort',abort); await task.destroy(); }
+  }
   const stem = (request.outputName || 'document').replace(/[\\/:*?"<>|]/g,'_').replace(/\.pdf$/i,'').slice(0,100);
   if (request.kind === 'images-pdf') {
     const output = await PDFDocument.create();

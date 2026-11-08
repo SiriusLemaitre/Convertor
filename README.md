@@ -13,6 +13,8 @@ Convert images, PDFs, audio, and video locally.
 - Split & extract PDFs
 - Images to PDF
 - PDF to images
+- PDF to Markdown (selectable text, page sections; no OCR)
+- Crop video (aspect ratios or a custom pixel rectangle; MP4 output)
 - Resize, crop & rotate
 - Trim audio & video
 - Extract video frames

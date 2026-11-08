@@ -6,7 +6,7 @@ export const defaultPreferences = {
   bitrate: 192, width: 640, fps: 15, start: 0, end: 5, trim: false,
   audioFormat: 'mp3', outputName: 'My document', image: defaultImageSettings, video: defaultVideoSettings,
   operation: 'extract', pages: '', targetMb: 10, format: 'png', imageWidth: 0, imageHeight: 0,
-  keepAspect: true, rotation: 0, cropRatio: '', interval: 5, dpi: 150,
+  cropX: 0, cropY: 0, keepAspect: true, rotation: 0, cropRatio: '', interval: 5, dpi: 150,
 };
 export type Preferences = typeof defaultPreferences;
 export function readStored<T>(key: string, fallback: T): T {

@@ -70,6 +70,10 @@ pub struct JobRequest {
     #[serde(default)]
     pub crop_ratio: String,
     #[serde(default)]
+    pub crop_x: u32,
+    #[serde(default)]
+    pub crop_y: u32,
+    #[serde(default)]
     pub interval: f64,
     #[serde(default)]
     pub dpi: u32,
@@ -658,7 +662,7 @@ mod tests {
         assert!(error.contains("stopped making progress"), "{error}");
         assert!(started.elapsed() < Duration::from_secs(10));
     }
-    fn request(kind: &str) -> JobRequest { JobRequest { kind: kind.into(), inputs: vec!["C:\\Videos\\clip with spaces.mp4".into()], output_dir: String::new(), output_name: "Merged document".into(), bitrate: 192, width: 640, fps: 15, start: 2.0, duration: Some(5.0), format: String::new(), image_width: 0, image_height: 0, keep_aspect: true, image_quality: 80, image_scale_percent: None, video_quality: 65, video_height: 0, video_fps: 0, pages: String::new(), operation: String::new(), target_mb: 10.0, rotation: 0, crop_ratio: String::new(), interval: 5.0, dpi: 150 } }
+    fn request(kind: &str) -> JobRequest { JobRequest { kind: kind.into(), inputs: vec!["C:\\Videos\\clip with spaces.mp4".into()], output_dir: String::new(), output_name: "Merged document".into(), bitrate: 192, width: 640, fps: 15, start: 2.0, duration: Some(5.0), format: String::new(), image_width: 0, image_height: 0, keep_aspect: true, image_quality: 80, image_scale_percent: None, video_quality: 65, video_height: 0, video_fps: 0, pages: String::new(), operation: String::new(), target_mb: 10.0, rotation: 0, crop_ratio: String::new(), crop_x: 0, crop_y: 0, interval: 5.0, dpi: 150 } }
     #[test]
     fn output_never_overwrites_existing_files() {
         let folder = tempfile::tempdir().unwrap();

@@ -1,3 +1,4 @@
+import { cropVideoFilter } from './cropVideo';
 import type { AppInfo, Job, JobRequest, Settings, VideoEstimate } from './api';
 import { fileName } from './tools';
 import { downloadFile, fileBlob, forgetFile, inspectBrowserFiles, pickBrowserFiles, storeFile } from './browserFiles';
@@ -52,6 +53,9 @@ async function convertMedia(request: JobRequest, signal?:AbortSignal, progress?:
       if (!video) throw new Error('This file has no video track.');
       args.push('-map','0:v:0','-map','0:a:0?','-vf',videoFilter(request,video),'-c:v',format === 'webm' ? 'libvpx' : 'libx264','-threads','1','-crf',String(Math.round(45 - (request.videoQuality || 65) * .32)));
       args.push(...(format === 'webm' ? ['-b:v','0','-cpu-used','5','-c:a','libvorbis'] : ['-preset','ultrafast','-pix_fmt','yuv420p','-c:a','aac']));
+    } else if (request.kind === 'video-crop') {
+      format = 'mp4';
+      args.push('-map','0:v:0','-map','0:a:0?','-vf',cropVideoFilter(request),'-c:v','libx264','-preset','ultrafast','-crf','20','-pix_fmt','yuv420p','-c:a','aac','-movflags','+faststart');
     } else if (request.kind === 'gif') {
       format = 'gif'; args = ['-ss',String(request.start || 0),'-i',input];
       if (request.duration !== null) args.push('-t',String(request.duration));
@@ -72,6 +76,7 @@ async function convertMedia(request: JobRequest, signal?:AbortSignal, progress?:
         return archiveFiles(results,`${name}-frames.zip`,signal);
       }
       args = ['-ss',String(request.start),'-i',input,'-frames:v','1'];
+      if (request.cropRatio && request.operation === 'crop-preview') args.push('-vf',cropVideoFilter(request));
     } else if (request.kind === 'metadata') {
       format = source.split('.').pop()?.toLowerCase() || 'mp4';
       args.push('-map','0:v?','-map','0:a?','-map','0:s?','-c','copy','-map_metadata','-1','-map_chapters','-1');
@@ -112,12 +117,12 @@ async function convertMedia(request: JobRequest, signal?:AbortSignal, progress?:
       }
       if (bytes.byteLength>limit) throw new Error('The result exceeds the requested size. Try a larger limit. No oversized output was saved.');
     }
-    return { name:`${name}${request.kind === 'metadata' ? '-clean' : request.kind === 'trim' ? '-clip' : request.kind === 'frames' ? '-frame' : '-converted'}.${format}`,blob:new Blob([bytes],{type:mediaMime(format)}) };
+    return { name:`${name}${request.kind === 'video-crop' ? '-cropped' : request.kind === 'metadata' ? '-clean' : request.kind === 'trim' ? '-clip' : request.kind === 'frames' ? '-frame' : '-converted'}.${format}`,blob:new Blob([bytes],{type:mediaMime(format)}) };
   });
 }
 async function convert(request: JobRequest, signal:AbortSignal, progress:(n:number)=>void): Promise<BrowserOutput> {
   const path = request.inputs[0];
-  if (['pdf','pdf-pages','images-pdf','pdf-images'].includes(request.kind) || request.kind === 'metadata' && /\.pdf$/i.test(path)) return convertPdf(request,signal,progress);
+  if (['pdf','pdf-pages','images-pdf','pdf-images','pdf-md'].includes(request.kind) || request.kind === 'metadata' && /\.pdf$/i.test(path)) return convertPdf(request,signal,progress);
   if (request.kind === 'image' || request.kind === 'image-edit' || request.kind === 'metadata' && isImage(path)) {
     const extension = path.split('.').pop()!.toLowerCase();
     const format = request.kind === 'metadata' ? extension === 'jpeg' ? 'jpg' : extension === 'tif' ? 'tiff' : extension : request.format || 'png';
@@ -156,7 +161,7 @@ async function preview(request: JobRequest, revision:number, kind:'visual'|'size
       const result = await encodeImage(path,{...request,format:'png'},controller.signal); blob = result.blob;
     } else if (/\.pdf$/i.test(path)) blob = (await pdfRaster(path,request.pages || '',96,'png',controller.signal,undefined,true))[0].blob;
     else {
-      const result = await convertMedia({...request,kind:'frames',operation:'single',format:'png',inputs:[path]},controller.signal); blob = result.blob;
+      const result = await convertMedia({...request,kind:'frames',operation:request.kind === 'video-crop' ? 'crop-preview' : 'single',format:'png',inputs:[path]},controller.signal); blob = result.blob;
     }
     checkCancelled(controller.signal);
     return {bytes:Array.from(new Uint8Array(await blob.arrayBuffer())),mime:blob.type};

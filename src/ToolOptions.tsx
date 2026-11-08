@@ -13,11 +13,12 @@ export function requestFor(kind: ToolId, files: InputFile[], p: Preferences, out
     ...(kind === 'gif' && !p.trim ? { start: 0 } : {}),
     pages: p.pages, operation: kind === 'frames' ? (p.operation === 'interval' ? 'interval' : 'single') : p.operation,
     targetMb: p.targetMb, imageWidth: p.imageWidth, imageHeight: p.imageHeight, keepAspect: p.keepAspect,
-    imageQuality: 90, rotation: p.rotation, cropRatio: p.cropRatio, interval: p.interval, dpi: p.dpi,
+    imageQuality: 90, rotation: p.rotation, cropX: p.cropX, cropY: p.cropY, cropRatio: kind === 'video-crop' ? p.cropRatio || '1:1' : p.cropRatio, interval: p.interval, dpi: p.dpi,
     ...(kind === 'image' ? imageFields(p.image) : kind === 'video' ? p.video : kind === 'audio' || kind === 'mp3' ? { format: p.audioFormat } : { format: p.format }),
   };
 }
 export function validOptions(kind: ToolId, p: Preferences) {
+  if (kind === 'video-crop') return ['', '1:1', '4:3', '3:2', '16:9', '9:16', 'custom'].includes(p.cropRatio) && (p.cropRatio !== 'custom' || [p.cropX, p.cropY, p.imageWidth, p.imageHeight].every(Number.isInteger) && p.cropX >= 0 && p.cropY >= 0 && p.imageWidth >= 2 && p.imageHeight >= 2 && p.imageWidth <= 16384 && p.imageHeight <= 16384);
   if (kind === 'image') return validImageSettings(p.image);
   if (kind === 'trim' || kind === 'gif' && p.trim) return p.start >= 0 && p.end > p.start;
   if (kind === 'pdf-pages') return p.operation === 'split' || /^\s*\d+(?:\s*-\s*\d+)?(?:\s*,\s*\d+(?:\s*-\s*\d+)?)*\s*$/.test(p.pages);
@@ -28,7 +29,7 @@ export function validOptions(kind: ToolId, p: Preferences) {
 }
 export default function ToolOptions({ kind, files, enabled, value: p, onChange }: { kind: ToolId; files: InputFile[]; enabled: boolean; value: Preferences; onChange: Dispatch<SetStateAction<Preferences>> }) {
   const set = <K extends keyof Preferences>(key: K, value: Preferences[K]) => onChange(s => ({ ...s, [key]: value }));
-  const number = (label: string, key: 'start' | 'end' | 'targetMb' | 'interval' | 'imageWidth' | 'imageHeight', min: number, step = 1) => <label className="field"><span>{label}</span><input type="number" min={min} step={step} value={p[key]} onChange={e => set(key, Number(e.target.value))} /></label>;
+  const number = (label: string, key: 'start' | 'end' | 'targetMb' | 'interval' | 'imageWidth' | 'imageHeight' | 'cropX' | 'cropY', min: number, step = 1) => <label className="field"><span>{label}</span><input type="number" min={min} step={step} value={p[key]} onChange={e => set(key, Number(e.target.value))} /></label>;
   const select = (label: string, key: 'format' | 'audioFormat' | 'rotation' | 'cropRatio' | 'dpi' | 'width' | 'fps', options: [string | number, string][]) => <label className="field"><span>{label}</span><div className="select-wrap"><select value={p[key]} onChange={e => set(key, (typeof p[key] === 'number' ? Number(e.target.value) : e.target.value) as never)}>{options.map(([v, name]) => <option key={v} value={v}>{name}</option>)}</select></div></label>;
   return <>
     {kind === 'image' && <ImageOptions files={files} enabled={enabled} value={p.image} onChange={next => onChange(s => ({ ...s, image: typeof next === 'function' ? next(s.image) : next }))} />}
@@ -42,6 +43,12 @@ export default function ToolOptions({ kind, files, enabled, value: p, onChange }
     {kind === 'images-pdf' && <p className="option-hint">One image per page, in list order. Pages fit within A4 dimensions and keep each image’s aspect ratio. Transparency is flattened.</p>}
     {kind === 'pdf-pages' && <div className="field"><span>Action</span><div className="segmented">{[['extract','Extract'],['remove','Remove'],['split','Split']].map(([v,n]) => <button key={v} className={p.operation === v ? 'active' : ''} onClick={() => set('operation',v)}>{n}</button>)}</div></div>}
     {(kind === 'pdf-pages' || kind === 'pdf-images') && <label className="field"><span>{kind === 'pdf-pages' && p.operation === 'remove' ? 'Pages to remove' : 'Pages'}</span><input aria-label={kind === 'pdf-pages' && p.operation === 'remove' ? 'Pages to remove' : 'Pages'} placeholder="e.g. 1, 3-5" value={p.pages} onChange={e => set('pages', e.target.value)} /><small className="option-hint">{kind === 'pdf-images' || p.operation === 'split' ? 'Leave empty for all pages. ' : ''}Page numbers start at 1. Split saves a PDF for each selected page.</small></label>}
+    {kind === 'pdf-md' && <p className="option-hint">Exports selectable text with page headings and paragraphs to .md. Images, tables, and original formatting are not preserved. Scanned PDFs need OCR first.</p>}
+    {kind === 'video-crop' && <>
+      {select('Crop area', 'cropRatio', [...['1:1','4:3','3:2','16:9','9:16'].map(r => [r,r] as [string,string]), ['custom','Custom rectangle']])}
+      {p.cropRatio === 'custom' && <><div className="field-pair">{number('Left (px)', 'cropX', 0)}{number('Top (px)', 'cropY', 0)}</div><div className="field-pair">{number('Width (px)', 'imageWidth', 2)}{number('Height (px)', 'imageHeight', 2)}</div></>}
+      <p className="option-hint">Aspect ratios crop the center. Custom coordinates start at the top left of the displayed video and must fit inside every source. Exports MP4 with audio; dimensions round down to even pixels. Preview frame shows the crop.</p>
+    </>}
     {kind === 'pdf-images' && <div className="field-pair">{select('Format', 'format', [['png','PNG'],['jpg','JPG']])}{select('Resolution', 'dpi', [72,150,200,300].map(n => [n, `${n} DPI`]))}</div>}
     {kind === 'compress' && <>{number('Maximum size per file (MB)', 'targetMb', .01, .1)}<div className="segmented size-presets">{[1,5,10,25].map(n => <button key={n} className={p.targetMb === n ? 'active' : ''} onClick={() => set('targetMb', n)}>{n} MB</button>)}</div><p className="option-hint">Images export as JPG, audio as MP3, and videos as MP4. Quality and image resolution may decrease to fit. Each output is checked against the limit.</p></>}
     {kind === 'image-edit' && <>

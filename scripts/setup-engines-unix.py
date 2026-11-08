@@ -66,7 +66,7 @@ def copy_binary(source, destination):
     return destination
 
 
-for name in ['ffmpeg', 'ffprobe', 'qpdf', 'pdftoppm', 'pdfinfo', 'deno']:
+for name in ['ffmpeg', 'ffprobe', 'qpdf', 'pdftoppm', 'pdftotext', 'pdfinfo', 'deno']:
     source = shutil.which(name)
     assert source, f'Missing build dependency: {name}'
     copy_binary(source, OUT / name)
@@ -115,7 +115,7 @@ if MAC:
 else:
     # Each engine uses its own bundled loader, isolating it from AppImage's libs.
     loader = next(LIB.glob('ld-linux-*.so.*'))
-    for name in ['ffmpeg', 'ffprobe', 'qpdf', 'pdftoppm', 'pdfinfo', 'deno']:
+    for name in ['ffmpeg', 'ffprobe', 'qpdf', 'pdftoppm', 'pdftotext', 'pdfinfo', 'deno']:
         (OUT / name).rename(OUT / (name + '.bin'))
         (OUT / name).write_text('#!/bin/sh\n'
             'dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)\n'
@@ -153,7 +153,7 @@ with tempfile.TemporaryDirectory(prefix='convertor-bundle-') as temporary:
     relocated = Path(temporary) / 'binaries'
     shutil.copytree(OUT, relocated)
     for name, arg in [('ffmpeg', '-version'), ('ffprobe', '-version'), ('qpdf', '--version'),
-                      ('pdftoppm', '-v'), ('pdfinfo', '-v'), ('yt-dlp', '--version'), ('deno', '--version')]:
+                      ('pdftotext', '-v'), ('pdftoppm', '-v'), ('pdfinfo', '-v'), ('yt-dlp', '--version'), ('deno', '--version')]:
         subprocess.run([str(relocated / name), arg], check=True, env={**os.environ, 'PATH': '/usr/bin:/bin'})
     subprocess.run([str(relocated / 'deno'), 'eval', 'if (1 + 1 !== 2) throw new Error("JavaScript runtime failed")'],
                    check=True, env={**os.environ, 'PATH': '/usr/bin:/bin'})

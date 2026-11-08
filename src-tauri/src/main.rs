@@ -129,8 +129,8 @@ fn enqueue(mut request: JobRequest, state: tauri::State<'_, AppState>) -> Result
     let mut tasks = vec![];
     for inputs in groups {
         let source = Path::new(&inputs[0]);
-        let name = if request.kind == "pdf-images" { "pdftoppm" } else if ["pdf", "pdf-pages"].contains(&request.kind.as_str()) || request.kind == "metadata" && source.extension().is_some_and(|e| e.eq_ignore_ascii_case("pdf")) { "qpdf" } else { "ffmpeg" };
-        let custom = match name { "qpdf" => &settings.qpdf_path, "pdftoppm" => &settings.pdf_renderer_path, _ => &settings.ffmpeg_path };
+        let name = if request.kind == "pdf-md" { "pdftotext" } else if request.kind == "pdf-images" { "pdftoppm" } else if ["pdf", "pdf-pages"].contains(&request.kind.as_str()) || request.kind == "metadata" && source.extension().is_some_and(|e| e.eq_ignore_ascii_case("pdf")) { "qpdf" } else { "ffmpeg" };
+        let custom: &str = match name { "pdftotext" => "", "qpdf" => &settings.qpdf_path, "pdftoppm" => &settings.pdf_renderer_path, _ => &settings.ffmpeg_path };
         let engine = find_engine(name, custom, &state.resources).ok_or(format!("{name} is not available. Set its path in Settings."))?;
         let folder = if request.output_dir.is_empty() { source.parent().unwrap().to_path_buf() } else { dunce::canonicalize(&request.output_dir).map_err(|e| format!("Output folder unavailable: {e}"))? };
         if !folder.is_dir() { return Err("The output path must be a folder.".into()); }

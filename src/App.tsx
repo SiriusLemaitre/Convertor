@@ -152,13 +152,13 @@ export default function App() {
   </div>;
 }
 function ToolPage({ tool, autoImagePreview, files, setFiles, info, dragging, browse, outputDir, chooseFolder, onJobs, toast }: { tool: Tool; autoImagePreview: boolean; files: InputFile[]; setFiles: (files: InputFile[]) => void; info: AppInfo | null; dragging: boolean; browse: () => void; outputDir: string; chooseFolder: () => void; onJobs: (jobs: Job[]) => void; toast: (message: string, error?: boolean) => void }) {
-  const [p,setP] = useStored<Preferences>(`convertor.options.v1.${tool.id}`,defaultPreferences);
+  const [p,setP] = useStored<Preferences>(`convertor.options.v1.${tool.id}`,tool.id === 'video-crop' ? {...defaultPreferences,cropRatio:'1:1'} : defaultPreferences);
   const [presets,setPresets] = useStored<{ name: string; value: Preferences }[]>(`convertor.presets.v1.${tool.id}`,[]);
   const [presetName,setPresetName] = useState('');
   const [selectedPreset,setSelectedPreset] = useState('');
   const [busy,setBusy] = useState(false);
   const request = requestFor(tool.id, files, p, outputDir);
-  const needs = tool.id === 'pdf-images' ? ['PDF renderer'] : ['pdf','pdf-pages'].includes(tool.id) ? ['qpdf'] : tool.id === 'metadata' ? [...new Set(files.map(f => /\.pdf$/i.test(f.path) ? 'qpdf' : 'FFmpeg'))] : ['FFmpeg'];
+  const needs = ['pdf-images','pdf-md'].includes(tool.id) ? ['PDF renderer'] : ['pdf','pdf-pages'].includes(tool.id) ? ['qpdf'] : tool.id === 'metadata' ? [...new Set(files.map(f => /\.pdf$/i.test(f.path) ? 'qpdf' : 'FFmpeg'))] : ['FFmpeg'];
   const engineReady = needs.every(name => !!info?.engines.find(e => e.name === name)?.path);
   const missing = needs.filter(name => !info?.engines.find(e => e.name === name)?.path);
   const reorder = ['pdf','images-pdf'].includes(tool.id);
@@ -172,7 +172,7 @@ function ToolPage({ tool, autoImagePreview, files, setFiles, info, dragging, bro
     const name = presetName.trim(); if (!name) return;
     setPresets(s => [...s.filter(item => item.name !== name),{ name,value:p }]); setPresetName(''); setSelectedPreset(name); toast('Preset saved.');
   }
-  const label = tool.id === 'pdf' ? 'Merge PDFs' : tool.id === 'images-pdf' ? 'Create PDF' : tool.id === 'pdf-pages' ? `${p.operation === 'split' ? 'Split' : p.operation === 'remove' ? 'Remove' : 'Extract'} pages` : tool.id === 'trim' ? 'Export clip' : tool.id === 'frames' ? 'Export frames' : tool.id === 'metadata' ? 'Save clean copies' : tool.id === 'compress' ? 'Compress files' : tool.id === 'image-edit' ? 'Export images' : `Convert ${files.length > 1 ? `${files.length} files` : `to ${tool.id === 'video' ? p.video.format.toUpperCase() : tool.id === 'image' ? p.image.format.toUpperCase() : ['audio','mp3'].includes(tool.id) ? p.audioFormat.toUpperCase() : tool.short}`}`;
+  const label = tool.id === 'pdf' ? 'Merge PDFs' : tool.id === 'images-pdf' ? 'Create PDF' : tool.id === 'pdf-pages' ? `${p.operation === 'split' ? 'Split' : p.operation === 'remove' ? 'Remove' : 'Extract'} pages` : tool.id === 'pdf-md' ? 'Export Markdown' : tool.id === 'video-crop' ? 'Export cropped video' : tool.id === 'trim' ? 'Export clip' : tool.id === 'frames' ? 'Export frames' : tool.id === 'metadata' ? 'Save clean copies' : tool.id === 'compress' ? 'Compress files' : tool.id === 'image-edit' ? 'Export images' : `Convert ${files.length > 1 ? `${files.length} files` : `to ${tool.id === 'video' ? p.video.format.toUpperCase() : tool.id === 'image' ? p.image.format.toUpperCase() : ['audio','mp3'].includes(tool.id) ? p.audioFormat.toUpperCase() : tool.short}`}`;
   return <>
     <div className="tool-page-heading"><span className={`tool-icon ${tool.color}`}><tool.icon size={28} /></span><div><h1>{tool.name}</h1><p className="page-description">{tool.description}</p></div></div>
     {desktop && info && !engineReady && <div className="engine-warning"><CircleHelp size={17} /><span>{missing.join(', ')} unavailable. Check processing engines in Settings.</span></div>}

@@ -1,12 +1,49 @@
 use super::*;
 
-pub fn is_tool(r: &JobRequest) -> bool { ["pdf-pages", "images-pdf", "pdf-images", "trim", "compress", "image-edit", "frames", "metadata"].contains(&r.kind.as_str()) }
+pub fn is_tool(r: &JobRequest) -> bool { ["pdf-md", "video-crop", "pdf-pages", "images-pdf", "pdf-images", "trim", "compress", "image-edit", "frames", "metadata"].contains(&r.kind.as_str()) }
 fn ext(input: &str) -> String { Path::new(input).extension().unwrap_or_default().to_string_lossy().to_lowercase() }
 fn is_image(input: &str) -> bool { IMAGE_INPUTS.contains(&ext(input).as_str()) }
 fn is_audio(input: &str) -> bool { AUDIO_INPUTS.contains(&ext(input).as_str()) }
+fn crop_filter(r: &JobRequest) -> Result<String, String> {
+    if r.crop_ratio == "custom" {
+        if r.image_width < 2 || r.image_height < 2 || r.image_width > 16384 || r.image_height > 16384 || r.crop_x > 32768 || r.crop_y > 32768 {
+            return Err("Enter a valid crop rectangle, with dimensions from 2 to 16,384 pixels.".into());
+        }
+        return Ok(format!("crop=w='if(gte(iw,{})*gte(ih,{}),{},0)':h={}:x={}:y={}:exact=1,scale=trunc(iw/2)*2:trunc(ih/2)*2", r.crop_x+r.image_width, r.crop_y+r.image_height, r.image_width, r.image_height, r.crop_x, r.crop_y));
+    }
+    if !["1:1", "4:3", "3:2", "16:9", "9:16"].contains(&r.crop_ratio.as_str()) { return Err("Choose a supported crop ratio.".into()); }
+    let (a,b) = r.crop_ratio.split_once(':').unwrap();
+    Ok(format!("crop=w='trunc(min(iw,ih*{a}/{b})/2)*2':h='trunc(min(ih,iw*{b}/{a})/2)*2':x='(iw-ow)/2':y='(ih-oh)/2':exact=1"))
+}
+
+fn text_markdown(text: &str) -> Result<String, String> {
+    if text.trim().is_empty() { return Err("No selectable text found. Scanned PDFs need OCR before exporting Markdown.".into()); }
+    let pages: Vec<_> = text.strip_suffix('\u{c}').unwrap_or(text).split('\u{c}').collect();
+    let mut output = String::new();
+    for (index, page) in pages.iter().enumerate() {
+        if index > 0 { output.push_str("\n---\n\n"); }
+        output.push_str(&format!("## Page {}\n\n", index+1));
+        if page.trim().is_empty() { output.push_str("*No selectable text on this page.*\n"); continue; }
+        let mut paragraph = String::new();
+        for line in page.lines().chain(std::iter::once("")) {
+            if line.trim().is_empty() {
+                if !paragraph.is_empty() { output.push_str(paragraph.trim()); output.push_str("\n\n"); paragraph.clear(); }
+            } else {
+                for ch in line.trim().chars() {
+                    if "\\`*_{}[]()#+.!|>~<-".contains(ch) { paragraph.push('\\'); }
+                    paragraph.push(ch);
+                }
+                paragraph.push(' ');
+            }
+        }
+    }
+    Ok(output)
+}
 pub fn extension(r: &JobRequest) -> &str {
     match r.kind.as_str() {
         "images-pdf" | "pdf-pages" => "pdf",
+        "pdf-md" => "md",
+        "video-crop" => "mp4",
         "image-edit" | "pdf-images" | "frames" => &r.format,
         "trim" => if is_audio(&r.inputs[0]) { "m4a" } else { "mp4" },
         "compress" => if is_image(&r.inputs[0]) { "jpg" } else if is_audio(&r.inputs[0]) { "mp3" } else { "mp4" },
@@ -41,10 +78,10 @@ pub fn validate_tool(r: &JobRequest) -> Result<(), String> {
         let e = ext(input);
         let media = is_audio(input) || ["mp4", "mkv", "mov", "webm", "avi", "m4v"].contains(&e.as_str());
         let supported = match r.kind.as_str() {
-            "pdf-pages" | "pdf-images" => e == "pdf",
+            "pdf-md" | "pdf-pages" | "pdf-images" => e == "pdf",
             "images-pdf" | "image-edit" => is_image(input),
             "trim" => media,
-            "frames" => media && !is_audio(input),
+            "video-crop" | "frames" => media && !is_audio(input),
             "compress" => media || is_image(input),
             "metadata" => media || is_image(input) || e == "pdf",
             _ => false,
@@ -56,6 +93,7 @@ pub fn validate_tool(r: &JobRequest) -> Result<(), String> {
             if !["extract", "remove", "split"].contains(&r.operation.as_str()) { return Err("Choose extract, remove, or split.".into()); }
             if r.operation != "split" && r.pages.trim().is_empty() { return Err("Enter the pages to extract or remove.".into()); }
         }
+        "video-crop" => { crop_filter(r)?; },
         "images-pdf" => validate_name(&r.output_name)?,
         "pdf-images" => if !["png", "jpg"].contains(&r.format.as_str()) || !(72..=300).contains(&r.dpi) { return Err("Choose PNG or JPG and 72–300 DPI.".into()); },
         "trim" => if !r.start.is_finite() || r.start < 0.0 || r.duration.is_none_or(|v| !v.is_finite() || v <= 0.0) { return Err("Set a valid start and an end after the start.".into()); },
@@ -212,6 +250,20 @@ pub fn run(task: &Task, cancelled: &AtomicBool, mut progress: impl FnMut(f64)) -
             let args_path = args.into_temp_path();
             execute(&task.engine, &[format!("@{}", args_path.display())], cancelled, 0.0, &mut progress, true)?;
         }
+        "pdf-md" => {
+            let text_file = stage.path().join("text.txt");
+            execute(&task.engine, &["-enc".into(), "UTF-8".into(), input.clone(), text_file.to_string_lossy().into()], cancelled, 0.0, |_| {}, false)?;
+            let text = fs::read_to_string(text_file).map_err(|e| e.to_string())?;
+            fs::write(&temporary, text_markdown(&text)?).map_err(|e| e.to_string())?;
+            progress(98.0);
+        }
+        "video-crop" => {
+            let mut args = base(input);
+            args.extend(strings(&["-map", "0:V:0", "-map", "0:a:0?", "-vf"])); args.push(crop_filter(r)?);
+            args.extend(strings(&["-c:v", "libx264", "-preset", "fast", "-crf", "20", "-pix_fmt", "yuv420p", "-c:a", "aac", "-movflags", "+faststart"]));
+            args.push(temporary.to_string_lossy().into());
+            execute(&task.engine, &args, cancelled, seconds(&task.engine, input, cancelled)?, &mut progress, false)?;
+        }
         "images-pdf" => image_pdf(task, &temporary, cancelled, &mut progress)?,
         "image-edit" => execute(&task.engine, &edit_args(r, &temporary), cancelled, 0.0, &mut progress, false)?,
         "trim" | "frames" => {
@@ -260,7 +312,7 @@ pub fn run(task: &Task, cancelled: &AtomicBool, mut progress: impl FnMut(f64)) -
     }
     if cancelled.load(Ordering::Relaxed) { return Err("Cancelled".into()); }
     if fs::metadata(&temporary).map_err(|e| e.to_string())?.len() == 0 { return Err("The engine produced an empty file.".into()); }
-    let stem = if r.kind == "images-pdf" { task.stem.clone() } else { format!("{}-{}", task.stem, match r.kind.as_str() { "trim" => "trimmed", "compress" => "compressed", "metadata" => "clean", "image-edit" => "edited", "pdf-pages" => "selected", "frames" => "frame", _ => "output" }) };
+    let stem = if r.kind == "images-pdf" { task.stem.clone() } else { format!("{}-{}", task.stem, match r.kind.as_str() { "pdf-md" => "text", "video-crop" => "cropped", "trim" => "trimmed", "compress" => "compressed", "metadata" => "clean", "image-edit" => "edited", "pdf-pages" => "selected", "frames" => "frame", _ => "output" }) };
     commit_output(temporary, &task.folder, &stem, extension(r))
 }
 
@@ -343,6 +395,10 @@ pub fn visual_preview(r: &JobRequest, engine: &Path, cancelled: &AtomicBool) -> 
             if r.kind != "image" { copy.image_scale_percent = None; copy.image_width = 0; copy.image_height = 0; }
             image_args(&copy, &output)
         };
+        if r.kind == "video-crop" {
+            validate_tool(r)?;
+            let end = args.len()-1; args.splice(end..end, ["-vf".into(), crop_filter(r)?]);
+        }
         if !is_image(input) { args.splice(0..0, ["-ss".into(), r.start.max(0.0).to_string()]); }
         // Bound all preview outputs, including images with large original dimensions.
         let filter_index = args.iter().position(|v| v == "-vf");
@@ -359,6 +415,40 @@ pub fn visual_preview(r: &JobRequest, engine: &Path, cancelled: &AtomicBool) -> 
 mod tests {
     use super::*;
     #[test]
+    fn markdown_preserves_paragraphs_pages_and_literal_characters() {
+        let md = text_markdown("Café *literal*\nwrapped\n\nNext paragraph\n\x0c\x0cLast page\x0c").unwrap();
+        assert!(md.contains("Café \\*literal\\* wrapped\n\nNext paragraph"));
+        assert!(md.contains("## Page 2\n\n*No selectable text on this page.*"));
+        assert!(md.contains("## Page 3\n\nLast page"));
+        assert!(text_markdown("\n\x0c ").unwrap_err().contains("OCR"));
+    }
+
+    #[test]
+    #[ignore = "Requires bundled engines"]
+    fn native_video_crop_exports_and_previews() {
+        let folder = tempfile::tempdir().unwrap();
+        let source = generate(folder.path(), "mp4");
+        let original = fs::read(&source).unwrap();
+        let mut r = request("video-crop", &source); r.crop_ratio = "1:1".into();
+        let output = run_request(r.clone(), folder.path(), "square");
+        assert_eq!(image_dimensions(&engine("ffmpeg"), &output, &AtomicBool::new(false)).unwrap(), (240,240));
+        assert!((seconds(&engine("ffmpeg"), &output.to_string_lossy(), &AtomicBool::new(false)).unwrap()-2.0).abs()<0.15);
+        let streams = output_with_timeout({ let mut c = command(&engine("ffprobe")); c.args(["-v","error","-show_entries","stream=codec_type","-of","csv=p=0"]).arg(&output); c }, None).unwrap();
+        assert!(streams.contains("audio"));
+        r.crop_ratio="custom".into(); r.crop_x=11; r.crop_y=21; r.image_width=101; r.image_height=81;
+        let output = run_request(r.clone(), folder.path(), "rectangle");
+        assert_eq!(image_dimensions(&engine("ffmpeg"), &output, &AtomicBool::new(false)).unwrap(), (100,80));
+        let preview = visual_preview(&r, &engine("ffmpeg"), &AtomicBool::new(false)).unwrap();
+        assert!(preview.bytes.starts_with(b"\x89PNG"));
+        let preview_path=folder.path().join("preview.png"); fs::write(&preview_path,preview.bytes).unwrap();
+        assert_eq!(image_dimensions(&engine("ffmpeg"), &preview_path, &AtomicBool::new(false)).unwrap(), (100,80));
+        r.crop_x=300;
+        assert!(run(&Task { request:r.clone(),engine:engine("ffmpeg"),folder:folder.path().into(),stem:"outside".into() }, &AtomicBool::new(false), |_| {}).is_err());
+        r.crop_ratio="1:1,evil".into(); assert!(validate_tool(&r).is_err());
+        assert_eq!(fs::read(source).unwrap(), original);
+        assert!(!fs::read_dir(folder.path()).unwrap().any(|p|p.unwrap().file_name().to_string_lossy().starts_with(".convertor-")));
+    }
+    #[test]
     fn page_ranges_are_bounded_and_deduplicated() {
         assert_eq!(selected_pages("1, 3-5, 3", 5).unwrap(), vec![1,3,4,5]);
         assert_eq!(selected_pages("", 3).unwrap(), vec![1,2,3]);
@@ -366,14 +456,14 @@ mod tests {
     }
     fn engine(name: &str) -> PathBuf {
         let folder = PathBuf::from(std::env::var_os("CONVERTOR_ENGINE_DIR").expect("Set CONVERTOR_ENGINE_DIR"));
-        if name == "pdftoppm" && cfg!(windows) { folder.join("poppler/Library/bin/pdftoppm.exe") }
+        if ["pdftoppm", "pdftotext"].contains(&name) && cfg!(windows) { folder.join(format!("poppler/Library/bin/{name}.exe")) }
         else { folder.join(if cfg!(windows) { format!("{name}.exe") } else { name.into() }) }
     }
     fn request(kind: &str, input: &Path) -> JobRequest {
         serde_json::from_value(serde_json::json!({"kind":kind,"inputs":[input.to_string_lossy()],"outputDir":"","outputName":"photos","bitrate":192,"width":640,"fps":15,"start":0,"duration":null,"format":"png","operation":"extract","targetMb":0.03,"interval":0.5,"dpi":72})).unwrap()
     }
     fn run_request(r: JobRequest, folder: &Path, name: &str) -> PathBuf {
-        let executable = if r.kind == "pdf-images" { "pdftoppm" } else if r.kind == "pdf-pages" || r.kind == "metadata" && ext(&r.inputs[0]) == "pdf" { "qpdf" } else { "ffmpeg" };
+        let executable = if r.kind == "pdf-md" { "pdftotext" } else if r.kind == "pdf-images" { "pdftoppm" } else if r.kind == "pdf-pages" || r.kind == "metadata" && ext(&r.inputs[0]) == "pdf" { "qpdf" } else { "ffmpeg" };
         run(&Task { request:r, engine:engine(executable), folder:folder.into(), stem:name.into() }, &AtomicBool::new(false), |_| {}).unwrap_or_else(|e| panic!("{name}: {e}"))
     }
     fn generate(folder: &Path, extension: &str) -> PathBuf {

@@ -8,7 +8,7 @@ const nav = name => page.locator('.sidebar').getByRole('button',{name,exact:true
 try {
   await page.goto('http://127.0.0.1:1420',{waitUntil:'networkidle'});
   await heading('Tools');
-  assert.equal(await page.locator('.tool-card').count(),15);
+  assert.equal(await page.locator('.tool-card').count(),17);
   assert.equal(await page.locator('.tool-category').count(),6);
   for (const [category, converter] of [['Images', 'Image Converter'], ['Audio', 'Audio Converter'], ['Video', 'Video Converter']]) {
     const group = page.locator('.tool-category').filter({ has: page.getByRole('heading', { name: category, exact: true }) });
@@ -20,7 +20,7 @@ try {
   assert.equal(await page.getByText('Local processing · Your files stay here', { exact: true }).count(), 0);
   await page.screenshot({path:'.tools/home-preview.png',fullPage:true});
   await page.getByRole('group',{name:'Filter by category'}).getByRole('button',{name:'Documents',exact:true}).click();
-  assert.equal(await page.locator('.tool-card').count(),4);
+  assert.equal(await page.locator('.tool-card').count(),5);
   await page.getByRole('group',{name:'Filter by category'}).getByRole('button',{name:'Audio',exact:true}).click();
   assert.equal(await page.locator('.tool-card').count(),3);
   await page.getByRole('group',{name:'Filter by category'}).getByRole('button',{name:'All',exact:true}).click();
@@ -65,7 +65,7 @@ try {
   await page.getByRole('combobox',{name:'Center crop'}).selectOption('4:3');
   await page.getByRole('combobox',{name:'Rotate clockwise'}).selectOption('90');
   await page.screenshot({path:'.tools/image-edit-preview.png',fullPage:true});
-  for (const name of ['Split & extract PDFs','Images to PDF','PDF to images','Trim audio & video','Extract video frames','Remove metadata','Video Converter','Audio Converter']) { await nav(name); await heading(name); assert.equal(await page.locator('.convert-button').isDisabled(),true); }
+  for (const name of ['PDF to Markdown','Crop video','Split & extract PDFs','Images to PDF','PDF to images','Trim audio & video','Extract video frames','Remove metadata','Video Converter','Audio Converter']) { await nav(name); await heading(name); assert.equal(await page.locator('.convert-button').isDisabled(),true); }
   await page.reload(); await heading('Tools'); await nav('Compress to size');
   assert.equal(await page.getByRole('spinbutton',{name:'Maximum size per file (MB)'}).inputValue(),'5');
   await nav('Image Converter');
@@ -89,5 +89,5 @@ try {
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>window.innerWidth),false);
   await page.screenshot({path:'.tools/compact-preview.png',fullPage:true});
   assert.deepEqual(errors,[]);
-  console.log('UI checks passed: all 15 tools, categories, search, mouse/keyboard history, presets, remembered options, and compact layout.');
+  console.log('UI checks passed: all 17 tools, categories, search, mouse/keyboard history, presets, remembered options, and compact layout.');
 } finally { await browser.close(); }

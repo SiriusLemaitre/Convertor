@@ -349,7 +349,7 @@ fn compress(task: &Task, output: &Path, stage: &Path, cancelled: &AtomicBool, mu
                     // Bound encoder memory on large recordings, including concurrent jobs.
                     // The second pass otherwise uses x264's slower, full analysis settings.
                     args.extend(strings(&["-map", "0:V:0", "-map", "0:a:0?", "-c:v", "libx264", "-preset", "fast", "-threads:v", "4", "-pix_fmt", "yuv420p", "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2", "-b:v"]));
-                    args.extend([format!("{}", video as u64), "-pass".into(), pass.to_string(), "-passlogfile".into(), log.to_string_lossy().into()]);
+                    args.extend([format!("{}", video as u64), "-pass:v".into(), pass.to_string(), "-passlogfile:v".into(), log.to_string_lossy().into()]);
                     if pass == 1 { args.extend(strings(&["-an", "-f", "null", if cfg!(windows) { "NUL" } else { "/dev/null" }])); }
                     else { args.extend(["-c:a".into(), "aac".into(), "-b:a".into(), (audio as u64).to_string(), "-movflags".into(), "+faststart".into(), "-f".into(), "mp4".into(), output.to_string_lossy().into()]); }
                     let start = (pass-1) as f64 * 49.0;

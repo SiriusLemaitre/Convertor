@@ -7,7 +7,7 @@ $licenseFolder = Join-Path $binaryFolder 'licenses'
 New-Item -ItemType Directory -Force -Path $downloadFolder,$binaryFolder,$licenseFolder | Out-Null
 
 function Download-File([string]$Url, [string]$Destination) {
-    & curl.exe -L --fail --connect-timeout 20 --max-time 300 -o $Destination $Url
+    & curl.exe -L --fail --retry 3 --retry-all-errors --connect-timeout 20 --max-time 300 -o $Destination $Url
     if ($LASTEXITCODE -ne 0) { throw "Download failed: $Url" }
 }
 function Assert-Checksum([string]$Archive, [string]$Manifest, [string]$AssetName) {
